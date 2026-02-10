@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import '../parcels/parcel1.dart';
 import '../profile/profile_screen.dart';
 import '../maps/screens/map_screen.dart';
+import '../rules_and_violations/rules_and_violation_screen.dart';
 
 class HomePageScreen extends StatefulWidget {
   final String userId;
@@ -81,16 +83,17 @@ class _HomePageScreenState extends State<HomePageScreen> {
         );
         break;
       case 2: // Rules
-        // TODO: Navigate to Road Rules screen
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Road Rules - Coming Soon')),
+        _navigateWithTransition(
+          RulesAndViolationScreen(
+            userId: widget.userId,
+            liveLat: widget.liveLat,
+            liveLng: widget.liveLng,
+          ),
+          index,
         );
         break;
       case 3: // Fines
-        // TODO: Navigate to Violations screen
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Violation Fines - Coming Soon')),
-        );
+        _navigateToParcels();
         break;
       case 4: // Profile
         _navigateWithTransition(
@@ -119,21 +122,85 @@ class _HomePageScreenState extends State<HomePageScreen> {
   }
 
   void _navigateToParcels() {
-    // TODO: Navigate to Parcels screen
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Parcels feature - Coming Soon'),
-        backgroundColor: Colors.orange,
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 450),
+        reverseTransitionDuration: const Duration(milliseconds: 450),
+        pageBuilder: (_, animation, __) => ParcelsPage(userId: widget.userId, liveLat: widget.liveLat, liveLng: widget.liveLng),
+        transitionsBuilder: (_, animation, __, child) {
+          final slideAnimation = Tween<Offset>(
+            begin: const Offset(0.15, 0),
+            end: Offset.zero,
+          ).animate(
+            CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+            ),
+          );
+
+          final fadeAnimation = Tween<double>(
+            begin: 0.0,
+            end: 1.0,
+          ).animate(
+            CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeIn,
+            ),
+          );
+
+          return SlideTransition(
+            position: slideAnimation,
+            child: FadeTransition(
+              opacity: fadeAnimation,
+              child: child,
+            ),
+          );
+        },
       ),
     );
   }
 
   void _navigateToRoadRules() {
-    // TODO: Navigate to Road Rules screen
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Road Rules feature - Coming Soon'),
-        backgroundColor: Colors.orange,
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 450),
+        reverseTransitionDuration: const Duration(milliseconds: 450),
+        pageBuilder: (_, animation, __) => RulesAndViolationScreen(
+          userId: widget.userId,
+          liveLat: widget.liveLat,
+          liveLng: widget.liveLng,
+        ),
+        transitionsBuilder: (_, animation, __, child) {
+          final slideAnimation = Tween<Offset>(
+            begin: const Offset(0.15, 0),
+            end: Offset.zero,
+          ).animate(
+            CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+            ),
+          );
+
+          final fadeAnimation = Tween<double>(
+            begin: 0.0,
+            end: 1.0,
+          ).animate(
+            CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeIn,
+            ),
+          );
+
+          return SlideTransition(
+            position: slideAnimation,
+            child: FadeTransition(
+              opacity: fadeAnimation,
+              child: child,
+            ),
+          );
+        },
       ),
     );
   }
@@ -254,7 +321,7 @@ class _HomePageScreenState extends State<HomePageScreen> {
               BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home"),
               BottomNavigationBarItem(icon: Icon(Icons.location_on), label: "Location"),
               BottomNavigationBarItem(icon: Icon(Icons.warning), label: "Rules"),
-              BottomNavigationBarItem(icon: Icon(Icons.attach_money), label: "Fines"),
+              BottomNavigationBarItem(icon: Icon(Icons.local_shipping), label: "Parcels"),
               BottomNavigationBarItem(icon: Icon(Icons.person), label: "Profile"),
             ],
           ),
@@ -290,3 +357,4 @@ class _HomePageScreenState extends State<HomePageScreen> {
     );
   }
 }
+

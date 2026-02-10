@@ -13,9 +13,14 @@ import 'package:latlong2/latlong.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../profile/profile_screen.dart';
 import '../../main_screen/home_page_screen.dart';
+import '../../parcels/parcel1.dart';
+import '../../parcels/parcel_ongoing.dart';
+import '../../parcels/parcel_ongoing_information.dart';
+import '../../rules_and_violations/rules_and_violation_screen.dart';
 import '../widgets/search_destination_sheet.dart';
 import '../widgets/destination_card.dart';
 import '../widgets/route_segment_card.dart';
@@ -36,12 +41,16 @@ class MapScreen extends StatefulWidget {
   final String userId;
   final double? liveLat;
   final double? liveLng;
+  final List<Map<String, dynamic>>? initialDestinations;
+  final bool autoStartNavigation;
 
   const MapScreen({
     super.key,
     required this.userId,
     this.liveLat,
     this.liveLng,
+    this.initialDestinations,
+    this.autoStartNavigation = false,
   });
 
   @override
@@ -69,6 +78,9 @@ class _MapScreenState extends State<MapScreen> {
   bool _programmaticMove = false;
   bool _suppressUserInteraction = false;
   bool _snapInFlight = false;
+  bool _isComputingRoute = false;
+  bool _arrivalModalVisible = false;
+  bool _arrivalHandlingInProgress = false;
   DateTime? _lastSnapAt;
   gmaps.GoogleMapController? _mapController;
   gmaps.BitmapDescriptor? _navArrowIcon;
@@ -121,8 +133,10 @@ class _MapScreenState extends State<MapScreen> {
   final List<DestinationInfo> _destinations = [];
   List<LatLng> _routePolyline = [];
   List<RouteStep> _routeSteps = [];
+  bool _initialDestinationsApplied = false;
   int _currentStepIndex = 0;
   double _distanceToNextStepMeters = 0;
+  static const double _destinationArrivalThresholdMeters = 10.0;
   double? _currentSpeedMps;
   bool _inPedestrianZone = false;
   bool _inNoOvertakingZone = false;
@@ -130,6 +144,10 @@ class _MapScreenState extends State<MapScreen> {
   AlertType? _autoCloseScheduledFor;
   AlertType? _lastSpokenAlertType;
   static const Duration _alertAutoCloseDelay = Duration(seconds: 4);
+  static const Duration _overspeedLogCooldown = Duration(seconds: 3);
+  DateTime? _lastOverspeedLogAt;
+  bool _overspeedLogInFlight = false;
+  String _riderFullName = '';
 
   // --- New: stable trimming/progress helpers ---
   int _lastTrimIdx = 0;
@@ -151,7 +169,9 @@ class _MapScreenState extends State<MapScreen> {
     }
     _loadPedestrianZones();
     _loadNoOvertakingZones();
+    _loadRiderFullName();
     _startWeatherAutoRefresh();
+    unawaited(_applyInitialDestinationsIfAny());
     _getCurrentLocation();
   }
 
@@ -248,6 +268,7 @@ class _MapScreenState extends State<MapScreen> {
     setState(() {
       _currentLocation = snapped;
     });
+    unawaited(_applyInitialDestinationsIfAny());
 
     _animateCameraTo(_currentLocation!, 15);
 
@@ -280,6 +301,7 @@ class _MapScreenState extends State<MapScreen> {
         setState(() {
           _currentLocation = nextLocation;
         });
+        unawaited(_applyInitialDestinationsIfAny());
       }
 
       if (_isNavigating && _followUser) {
@@ -362,14 +384,48 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  void _openParcelsWithTransition() {
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 450),
+        reverseTransitionDuration: const Duration(milliseconds: 450),
+        pageBuilder: (_, animation, __) => ParcelsPage(userId: widget.userId, liveLat: _activeLat, liveLng: _activeLng),
+        transitionsBuilder: (_, animation, __, child) {
+          final slideAnimation = Tween<Offset>(
+            begin: const Offset(0.15, 0),
+            end: Offset.zero,
+          ).animate(
+            CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+            ),
+          );
+
+          final fadeAnimation = Tween<double>(
+            begin: 0.0,
+            end: 1.0,
+          ).animate(
+            CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeIn,
+            ),
+          );
+
+          return SlideTransition(
+            position: slideAnimation,
+            child: FadeTransition(
+              opacity: fadeAnimation,
+              child: child,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   void _onItemTapped(int index) {
     if (_isNavigating) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('End your ride first before switching screens'),
-          backgroundColor: Colors.red,
-        ),
-      );
       return;
     }
 
@@ -395,14 +451,17 @@ class _MapScreenState extends State<MapScreen> {
         );
         break;
       case 2:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Road Rules - Coming Soon')),
+        _navigateWithTransition(
+          RulesAndViolationScreen(
+            userId: widget.userId,
+            liveLat: _activeLat,
+            liveLng: _activeLng,
+          ),
+          index,
         );
         break;
       case 3:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Violation Fines - Coming Soon')),
-        );
+        _openParcelsWithTransition();
         break;
     }
   }
@@ -452,13 +511,7 @@ class _MapScreenState extends State<MapScreen> {
       _updateNavigationProgress();
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Navigation started! Ride safe! 🏍️'),
-        backgroundColor: Colors.green,
-        duration: Duration(seconds: 2),
-      ),
-    );
+    
   }
 
   void _endNavigation() {
@@ -466,6 +519,8 @@ class _MapScreenState extends State<MapScreen> {
       _isNavigating = false;
       _dismissedAlertType = null;
       _lastSpokenAlertType = null;
+      _arrivalModalVisible = false;
+      _arrivalHandlingInProgress = false;
     });
     _cancelAlertAutoClose();
     _followUser = false;
@@ -490,11 +545,208 @@ class _MapScreenState extends State<MapScreen> {
       }
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Navigation ended. Ride completed! ✅'),
-        backgroundColor: Colors.blue,
-        duration: Duration(seconds: 2),
+    
+  }
+
+  int? _extractParcelId(DestinationInfo destination) {
+    if (destination.parcelId != null) return destination.parcelId;
+    final match = RegExp(r'Parcel\s*#(\d+)', caseSensitive: false)
+        .firstMatch(destination.name);
+    if (match == null) return null;
+    return int.tryParse(match.group(1)!);
+  }
+
+  Future<void> _handleReachedDestination() async {
+    if (!_isNavigating ||
+        _currentLocation == null ||
+        _destinations.isEmpty ||
+        _arrivalModalVisible ||
+        _arrivalHandlingInProgress) {
+      return;
+    }
+
+    final target = _destinations.first;
+    final distance = Geolocator.distanceBetween(
+      _currentLocation!.latitude,
+      _currentLocation!.longitude,
+      target.location.latitude,
+      target.location.longitude,
+    );
+    if (distance > _destinationArrivalThresholdMeters) return;
+
+    _arrivalHandlingInProgress = true;
+    final completedParcelId = _extractParcelId(target);
+
+    if (mounted) {
+      setState(() {
+        _destinations.removeAt(0);
+        _routePolyline = [];
+        _routeSteps = [];
+        _currentStepIndex = 0;
+        _distanceToNextStepMeters = 0;
+      });
+    }
+
+    final hasNextDestination = _destinations.isNotEmpty;
+    if (hasNextDestination) {
+      if (mounted) setState(() => _isComputingRoute = true);
+      try {
+        await _rebuildDestinationOrder();
+        await _fetchRoute();
+      } finally {
+        if (mounted) setState(() => _isComputingRoute = false);
+      }
+      if (mounted && _routeSteps.isNotEmpty) {
+        _voiceAlertService.announceNavigation(_routeSteps.first.instruction);
+      }
+    } else {
+      if (mounted) {
+        setState(() {
+          _isNavigating = false;
+          _hasDestination = false;
+        });
+      }
+      _followUser = false;
+      _applyMapStyle(navigation: false);
+      _voiceAlertService.stop();
+    }
+
+    _arrivalModalVisible = true;
+    await _showRideCompletedModal(
+      completedParcelId: completedParcelId,
+      showContinue: hasNextDestination,
+    );
+    _arrivalModalVisible = false;
+    _arrivalHandlingInProgress = false;
+  }
+
+  Future<void> _showRideCompletedModal({
+    required int? completedParcelId,
+    required bool showContinue,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            gradient: const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Color(0xFFFF0000),
+                Color(0xFF800000),
+              ],
+              stops: [0.0, 1.0],
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Ride completed',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 14),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                  _endNavigation();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.red,
+                  elevation: 8,
+                  shadowColor: Colors.black45,
+                ),
+                child: const Text(
+                  'Go back to Maps',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (showContinue) const SizedBox(height: 8),
+              if (showContinue)
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop();
+                    _followUser = true;
+                    if (_routeSteps.isNotEmpty) {
+                      _voiceAlertService
+                          .announceNavigation(_routeSteps.first.instruction);
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: Colors.red,
+                    elevation: 8,
+                    shadowColor: Colors.black45,
+                  ),
+                  child: const Text(
+                    'Continue to the next Destination',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 8),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                  if (completedParcelId == null) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ParcelOngoingPage(
+                          userId: widget.userId,
+                          liveLat: _activeLat,
+                          liveLng: _activeLng,
+                        ),
+                      ),
+                    );
+                    return;
+                  }
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ParcelOngoingInformationPage(
+                        parcelId: completedParcelId,
+                        userId: widget.userId,
+                      ),
+                    ),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.red,
+                  elevation: 8,
+                  shadowColor: Colors.black45,
+                ),
+                child: const Text(
+                  'Deliver Parcel',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1171,6 +1423,62 @@ class _MapScreenState extends State<MapScreen> {
 
   // ================= DESTINATION HANDLING =================
 
+  Future<void> _applyInitialDestinationsIfAny() async {
+    if (_initialDestinationsApplied) return;
+    final raw = widget.initialDestinations;
+    if (raw == null || raw.isEmpty) return;
+    if (_currentLocation == null) return;
+
+    final seeded = <DestinationInfo>[];
+    for (final item in raw) {
+      final lat = (item['lat'] is num)
+          ? (item['lat'] as num).toDouble()
+          : double.tryParse(item['lat']?.toString() ?? '');
+      final lng = (item['lng'] is num)
+          ? (item['lng'] as num).toDouble()
+          : double.tryParse(item['lng']?.toString() ?? '');
+      final name = (item['name'] ?? '').toString().trim();
+      final parcelId = (item['parcel_id'] is num)
+          ? (item['parcel_id'] as num).toInt()
+          : int.tryParse(item['parcel_id']?.toString() ?? '');
+      if (lat == null || lng == null) continue;
+      seeded.add(
+        DestinationInfo(
+          location: LatLng(lat, lng),
+          name: name.isEmpty ? 'Destination' : name,
+          parcelId: parcelId,
+        ),
+      );
+    }
+
+    _initialDestinationsApplied = true;
+    if (seeded.isEmpty) return;
+
+    setState(() {
+      _destinations
+        ..clear()
+        ..addAll(seeded);
+      _hasDestination = true;
+    });
+
+    if (mounted) {
+      setState(() => _isComputingRoute = true);
+    }
+    try {
+      await _rebuildDestinationOrder();
+      await _fetchRoute();
+    } finally {
+      if (mounted) {
+        setState(() => _isComputingRoute = false);
+      }
+    }
+
+    if (!mounted) return;
+    if (widget.autoStartNavigation && _routeSteps.isNotEmpty) {
+      _startNavigation();
+    }
+  }
+
   void _showSearchDestination() {
     showModalBottomSheet(
       context: context,
@@ -1227,17 +1535,12 @@ class _MapScreenState extends State<MapScreen> {
       _animateCameraTo(location, 15);
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Destination added: ${name.split(',')[0]}'),
-        backgroundColor: Colors.green,
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    
   }
 
   Future<void> _rebuildDestinationOrder() async {
     if (_currentLocation == null || _destinations.isEmpty) {
+      if (!mounted) return;
       setState(() {
         _hasDestination = _destinations.isNotEmpty;
       });
@@ -1249,6 +1552,7 @@ class _MapScreenState extends State<MapScreen> {
       destinations: _destinations,
     );
 
+    if (!mounted) return;
     setState(() {
       _destinations
         ..clear()
@@ -1607,30 +1911,39 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  void _removeDestination(int index) {
+  Future<void> _removeDestination(int index) async {
     _destinations.removeAt(index);
 
     if (_destinations.isEmpty) {
       setState(() {
+        _isNavigating = false;
         _hasDestination = false;
         _routePolyline = [];
         _routeSteps = [];
         _currentStepIndex = 0;
         _distanceToNextStepMeters = 0;
+        _dismissedAlertType = null;
+        _lastSpokenAlertType = null;
       });
+      _cancelAlertAutoClose();
+      _followUser = false;
+      _applyMapStyle(navigation: false);
+      _voiceAlertService.stop();
     } else {
-      _rebuildDestinationOrder();
-      _fetchRoute();
-      setState(() {});
+      if (mounted) {
+        setState(() => _isComputingRoute = true);
+      }
+      try {
+        await _rebuildDestinationOrder();
+        await _fetchRoute();
+      } finally {
+        if (mounted) {
+          setState(() => _isComputingRoute = false);
+        }
+      }
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Destination removed'),
-        backgroundColor: Colors.red,
-        duration: Duration(seconds: 1),
-      ),
-    );
+    
   }
 
   // ================= NAVIGATION PROGRESS =================
@@ -1639,6 +1952,7 @@ class _MapScreenState extends State<MapScreen> {
     if (_currentLocation == null) return;
     if (_routeSteps.isEmpty) return;
     if (_currentStepIndex >= _routeSteps.length) return;
+    unawaited(_handleReachedDestination());
 
     final step = _routeSteps[_currentStepIndex];
     final distance = Geolocator.distanceBetween(
@@ -1985,6 +2299,7 @@ class _MapScreenState extends State<MapScreen> {
 
   void _syncVoiceSafetyAlert() {
     final currentType = _currentNavigationAlertType();
+    unawaited(_maybeLogOverspeedingViolation(currentType));
     final shouldSpeak =
         currentType != null && currentType != _dismissedAlertType;
 
@@ -1996,6 +2311,55 @@ class _MapScreenState extends State<MapScreen> {
     if (_lastSpokenAlertType == currentType) return;
     _lastSpokenAlertType = currentType;
     _voiceAlertService.announceSafetyAlert(currentType!);
+  }
+
+  Future<void> _loadRiderFullName() async {
+    try {
+      final response = await Supabase.instance.client
+          .from('users')
+          .select('fname, mname, lname')
+          .eq('user_id', widget.userId)
+          .maybeSingle();
+      if (!mounted || response == null) return;
+
+      final fname = (response['fname'] ?? '').toString().trim();
+      final mname = (response['mname'] ?? '').toString().trim();
+      final lname = (response['lname'] ?? '').toString().trim();
+      final parts = [fname, mname, lname].where((p) => p.isNotEmpty).toList();
+      _riderFullName = parts.join(' ');
+    } catch (_) {
+      // Keep silent; violation log can still proceed without name.
+    }
+  }
+
+  Future<void> _maybeLogOverspeedingViolation(AlertType? currentType) async {
+    if (!_isNavigating) return;
+    if (currentType != AlertType.overspeeding) return;
+    if (_currentLocation == null) return;
+    if (_overspeedLogInFlight) return;
+
+    final now = DateTime.now();
+    if (_lastOverspeedLogAt != null &&
+        now.difference(_lastOverspeedLogAt!) < _overspeedLogCooldown) {
+      return;
+    }
+
+    _overspeedLogInFlight = true;
+    try {
+      await Supabase.instance.client.from('violation_logs').insert({
+        'user_id': widget.userId,
+        'violation': 'overspeeding',
+        'name': _riderFullName.isEmpty ? null : _riderFullName,
+        'lat': _currentLocation!.latitude,
+        'lng': _currentLocation!.longitude,
+        'date': now.toIso8601String(),
+      });
+      _lastOverspeedLogAt = now;
+    } catch (_) {
+      // Keep silent to avoid UI noise while driving.
+    } finally {
+      _overspeedLogInFlight = false;
+    }
   }
 
   // ================= BUILD =================
@@ -2410,7 +2774,6 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ),
 
-
           /// RECENTER BUTTON (idle, no destinations)
           if (!_isNavigating && !_hasDestination)
             Positioned(
@@ -2803,6 +3166,52 @@ class _MapScreenState extends State<MapScreen> {
                 onClose: () => _dismissAlert(activeAlertType!),
               ),
             ),
+          if (_isComputingRoute)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black45,
+                child: Center(
+                  child: Container(
+                    width: 320,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 18,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        CircularProgressIndicator(
+                          color: Color(0xFFD40000),
+                        ),
+                        SizedBox(height: 14),
+                        Text(
+                          'Computing the distance and route',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        SizedBox(height: 6),
+                        Text(
+                          'Please wait.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.black54,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
 
@@ -2967,7 +3376,7 @@ class _MapScreenState extends State<MapScreen> {
                         BottomNavigationBarItem(
                             icon: Icon(Icons.warning), label: 'Rules'),
                         BottomNavigationBarItem(
-                            icon: Icon(Icons.attach_money), label: 'Fines'),
+                            icon: Icon(Icons.local_shipping), label: 'Parcels'),
                         BottomNavigationBarItem(
                             icon: Icon(Icons.person), label: 'Profile'),
                       ],

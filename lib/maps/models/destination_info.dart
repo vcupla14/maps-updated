@@ -3,12 +3,14 @@ import 'package:latlong2/latlong.dart';
 class DestinationInfo {
   final LatLng location;
   final String name;
+  final int? parcelId;
   double distanceKm;
   int durationMinutes;
 
   DestinationInfo({
     required this.location,
     required this.name,
+    this.parcelId,
     this.distanceKm = 0.0,
     this.durationMinutes = 0,
   });
