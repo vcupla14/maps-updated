@@ -10,12 +10,14 @@ class RulesAndViolationScreen extends StatefulWidget {
   final String userId;
   final double? liveLat;
   final double? liveLng;
+  final int initialTab;
 
   const RulesAndViolationScreen({
     super.key,
     required this.userId,
     this.liveLat,
     this.liveLng,
+    this.initialTab = 0,
   });
 
   @override
@@ -35,6 +37,7 @@ class _RulesAndViolationScreenState extends State<RulesAndViolationScreen> {
   @override
   void initState() {
     super.initState();
+    _selectedTab = widget.initialTab;
     _loadCategoriesForCurrentTab();
   }
 
@@ -147,6 +150,8 @@ class _RulesAndViolationScreenState extends State<RulesAndViolationScreen> {
       _selectedCategory = null;
     });
 
+
+
     try {
       final response =
           await Supabase.instance.client.from(tableName).select('type');
@@ -175,6 +180,116 @@ class _RulesAndViolationScreenState extends State<RulesAndViolationScreen> {
       setState(() => _isCategoryLoading = false);
     }
   }
+
+    Future<List<Map<String, dynamic>>> _fetchRoadRules() async {
+    if (_selectedCategory == null) return [];
+    
+    try {
+      final response = await Supabase.instance.client
+          .from('road_rules')
+          .select()
+          .eq('type', _selectedCategory!);
+      
+      return List<Map<String, dynamic>>.from(response as List);
+    } catch (e) {
+      print('Error fetching road rules: $e');
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchViolationFines() async {
+  if (_selectedCategory == null) return [];
+  
+  try {
+    final response = await Supabase.instance.client
+        .from('violation_fines')
+        .select()
+        .eq('type', _selectedCategory!);
+    
+    return List<Map<String, dynamic>>.from(response as List);
+  } catch (e) {
+    print('Error fetching violation fines: $e');
+    return [];
+  }
+}
+
+    Widget _buildRoadRuleCard(Map<String, dynamic> rule) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade300),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Icon on the left
+            Container(
+              width: 90,
+              height: 90,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  rule['icon_url'] ?? '',
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) {
+                    return const Icon(Icons.image_not_supported, size: 60);
+                  },
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return const Center(
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    );
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            // Name and Meaning on the right
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    rule['name'] ?? 'Unknown',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    rule['meaning'] ?? '',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey.shade700,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    Widget _buildViolationFineCard(Map<String, dynamic> violation) {
+  return _ViolationFineCardItem(violation: violation);
+}
 
   Widget _buildCategoryTabs() {
     if (_isCategoryLoading) {
@@ -297,14 +412,11 @@ class _RulesAndViolationScreenState extends State<RulesAndViolationScreen> {
                 ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 104, 20, 20),
-              child: Column(
-                children: [
-                  Container(
-                    width: double.infinity,
-                    height: 670,
-                    padding: const EdgeInsets.all(16),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 104, 20, 20),
+                child: Container(  // 👈 Changed from Column to just Container
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(20),
@@ -410,53 +522,109 @@ class _RulesAndViolationScreenState extends State<RulesAndViolationScreen> {
                         const SizedBox(height: 8),
                         _buildCategoryTabs(),
                         const SizedBox(height: 14),
-                        Expanded(
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 300),
-                            switchInCurve: Curves.easeOutCubic,
-                            switchOutCurve: Curves.easeInCubic,
-                            transitionBuilder: (child, animation) {
-                              final beginOffset = Offset(
-                                _tabDirection > 0 ? 0.12 : -0.12,
-                                0,
-                              );
-                              final slide = Tween<Offset>(
-                                begin: beginOffset,
-                                end: Offset.zero,
-                              ).animate(animation);
-                              return SlideTransition(
-                                position: slide,
-                                child: FadeTransition(
-                                  opacity: animation,
-                                  child: child,
-                                ),
-                              );
-                            },
-                            child: Center(
-                              key: ValueKey<int>(_selectedTab),
-                              child: Text(
-                                _selectedTab == 0
-                                    ? (_selectedCategory == null
-                                        ? "Road Rules Content"
-                                        : "Road Rules • $_selectedCategory")
-                                    : (_selectedCategory == null
-                                        ? "Violation Fines Content"
-                                        : "Violation Fines • $_selectedCategory"),
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                      Expanded(
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 300),
+                          switchInCurve: Curves.easeOutCubic,
+                          switchOutCurve: Curves.easeInCubic,
+                          transitionBuilder: (child, animation) {
+                            final beginOffset = Offset(
+                              _tabDirection > 0 ? 0.12 : -0.12,
+                              0,
+                            );
+                            final slide = Tween<Offset>(
+                              begin: beginOffset,
+                              end: Offset.zero,
+                            ).animate(animation);
+                            return SlideTransition(
+                              position: slide,
+                              child: FadeTransition(
+                                opacity: animation,
+                                child: child,
                               ),
-                            ),
-                          ),
+                            );
+                          },
+                          child: _selectedTab == 0
+                              ? FutureBuilder<List<Map<String, dynamic>>>(
+                                  key: ValueKey<String>('road_rules_$_selectedCategory'),
+                                  future: _fetchRoadRules(),
+                                  builder: (context, snapshot) {
+                                    if (snapshot.connectionState == ConnectionState.waiting) {
+                                      return const Center(child: CircularProgressIndicator());
+                                    }
+                                    
+                                    if (snapshot.hasError) {
+                                      return Center(
+                                        child: Text(
+                                          'Error loading rules',
+                                          style: TextStyle(color: Colors.red.shade700),
+                                        ),
+                                      );
+                                    }
+                                    
+                                    final rules = snapshot.data ?? [];
+                                    
+                                    if (rules.isEmpty) {
+                                      return const Center(
+                                        child: Text(
+                                          'No rules found for this category',
+                                          style: TextStyle(color: Colors.black54),
+                                        ),
+                                      );
+                                    }
+                                    
+                                    return ListView.builder(
+                                      padding: const EdgeInsets.symmetric(vertical: 8),
+                                      itemCount: rules.length,
+                                      itemBuilder: (context, index) {
+                                        return _buildRoadRuleCard(rules[index]);
+                                      },
+                                    );
+                                  },
+                                )
+                              : FutureBuilder<List<Map<String, dynamic>>>(
+                                  key: ValueKey<String>('violation_fines_$_selectedCategory'),
+                                  future: _fetchViolationFines(),
+                                  builder: (context, snapshot) {
+                                    if (snapshot.connectionState == ConnectionState.waiting) {
+                                      return const Center(child: CircularProgressIndicator());
+                                    }
+                                    
+                                    if (snapshot.hasError) {
+                                      return Center(
+                                        child: Text(
+                                          'Error loading violations',
+                                          style: TextStyle(color: Colors.red.shade700),
+                                        ),
+                                      );
+                                    }
+                                    
+                                    final violations = snapshot.data ?? [];
+                                    
+                                    if (violations.isEmpty) {
+                                      return const Center(
+                                        child: Text(
+                                          'No violations found for this category',
+                                          style: TextStyle(color: Colors.black54),
+                                        ),
+                                      );
+                                    }
+                                    
+                                    return ListView.builder(
+                                      padding: const EdgeInsets.symmetric(vertical: 8),
+                                      itemCount: violations.length,
+                                      itemBuilder: (context, index) {
+                                        return _buildViolationFineCard(violations[index]);
+                                      },
+                                    );
+                                  },
+                                ),
                         ),
-                      ],
+                      ),
+              ],
                     ),
                   ),
-                  const Spacer(),
-                ],
               ),
-            ),
           ],
         ),
       ),
@@ -496,6 +664,141 @@ class _RulesAndViolationScreenState extends State<RulesAndViolationScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+class _ViolationFineCardItem extends StatefulWidget {
+  final Map<String, dynamic> violation;
+
+  const _ViolationFineCardItem({required this.violation});
+
+  @override
+  State<_ViolationFineCardItem> createState() => _ViolationFineCardItemState();
+}
+
+class _ViolationFineCardItemState extends State<_ViolationFineCardItem> {
+  bool _isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final firstOffense = widget.violation['first_offense'];
+    final secondOffense = widget.violation['second_offense'];
+    final thirdOffense = widget.violation['third_offense'];
+    final subsequentOffense = widget.violation['subsequent_offense'];
+    final description = widget.violation['description'] ?? '';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Name
+          Text(
+            widget.violation['name'] ?? 'Unknown',
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 8),
+          
+          // Offenses
+          if (firstOffense != null) ...[
+            _buildOffenseRow('First Offense', firstOffense),
+            const SizedBox(height: 4),
+          ],
+          if (secondOffense != null) ...[
+            _buildOffenseRow('Second Offense', secondOffense),
+            const SizedBox(height: 4),
+          ],
+          if (thirdOffense != null) ...[
+            _buildOffenseRow('Third Offense', thirdOffense),
+            const SizedBox(height: 4),
+          ],
+          if (subsequentOffense != null) ...[
+            _buildOffenseRow('Subsequent Offense', subsequentOffense),
+          ],
+          
+          // Description dropdown
+          if (description.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            InkWell(
+              onTap: () => setState(() => _isExpanded = !_isExpanded),
+              child: Row(
+                children: [
+                  Text(
+                    'Description',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    _isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                    size: 18,
+                    color: Colors.grey.shade700,
+                  ),
+                ],
+              ),
+            ),
+            if (_isExpanded) ...[
+              const SizedBox(height: 6),
+              Text(
+                description,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOffenseRow(String label, dynamic value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 140,
+          child: Text(
+            '$label:',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade700,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value.toString(),
+            style: const TextStyle(
+              fontSize: 13,
+              color: Colors.black87,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

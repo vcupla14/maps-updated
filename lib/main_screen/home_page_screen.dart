@@ -205,15 +205,50 @@ class _HomePageScreenState extends State<HomePageScreen> {
     );
   }
 
-  void _navigateToViolationFines() {
-    // TODO: Navigate to Violation Fines screen
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Violation Fines feature - Coming Soon'),
-        backgroundColor: Colors.orange,
+void _navigateToViolationFines() {
+  Navigator.push(
+    context,
+    PageRouteBuilder(
+      transitionDuration: const Duration(milliseconds: 450),
+      reverseTransitionDuration: const Duration(milliseconds: 450),
+      pageBuilder: (_, animation, __) => RulesAndViolationScreen(
+        userId: widget.userId,
+        liveLat: widget.liveLat,
+        liveLng: widget.liveLng,
+        initialTab: 1,  // 👈 THIS SETS IT TO VIOLATION FINES TAB
       ),
-    );
-  }
+      transitionsBuilder: (_, animation, __, child) {
+        final slideAnimation = Tween<Offset>(
+          begin: const Offset(0.15, 0),
+          end: Offset.zero,
+        ).animate(
+          CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+          ),
+        );
+
+        final fadeAnimation = Tween<double>(
+          begin: 0.0,
+          end: 1.0,
+        ).animate(
+          CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeIn,
+          ),
+        );
+
+        return SlideTransition(
+          position: slideAnimation,
+          child: FadeTransition(
+            opacity: fadeAnimation,
+            child: child,
+          ),
+        );
+      },
+    ),
+  );
+}
 
   @override
   Widget build(BuildContext context) {
