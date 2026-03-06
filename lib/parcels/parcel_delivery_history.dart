@@ -1,0 +1,481 @@
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'parcel_information.dart';
+
+class DeliveryHistoryPage extends StatefulWidget {
+  final String userId;
+
+  const DeliveryHistoryPage({
+    super.key,
+    required this.userId,
+  });
+
+  @override
+  State<DeliveryHistoryPage> createState() => _DeliveryHistoryPageState();
+}
+
+class _DeliveryHistoryPageState extends State<DeliveryHistoryPage> {
+  static const int _itemsPerPage = 10;
+  bool isLoadingHistory = true;
+  List<Map<String, dynamic>> historyParcels = [];
+
+  int deliveredCount = 0;
+  int cancelledCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    fetchHistoryParcels();
+  }
+
+  Future<void> fetchHistoryParcels() async {
+    try {
+      final response = await Supabase.instance.client
+          .from('parcels')
+          .select('*')
+          .inFilter('status', ['successfully delivered', 'cancelled']);
+      final List data = response as List;
+
+      List<Map<String, dynamic>> history = [];
+      int delivered = 0;
+      int cancelled = 0;
+
+      for (var item in data) {
+        if (!_isAssignedToCurrentRider(item)) continue;
+        final status = (item['status'] ?? '').toString();
+        String timestamp = '';
+
+        if (item['attempt2_date'] != null) {
+          timestamp = item['attempt2_date'].toString();
+        } else if (item['attempt1_date'] != null) {
+          timestamp = item['attempt1_date'].toString();
+        }
+
+        history.add({
+          'parcel_id': item['parcel_id'],
+          'status': status == 'successfully delivered' ? 'Delivered' : 'Cancelled',
+          'timestamp': timestamp,
+        });
+
+        if (status == 'successfully delivered') {
+          delivered++;
+        } else if (status == 'cancelled') {
+          cancelled++;
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        history.sort((a, b) {
+          final aTime = DateTime.tryParse((a['timestamp'] ?? '').toString()) ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          final bTime = DateTime.tryParse((b['timestamp'] ?? '').toString()) ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          return bTime.compareTo(aTime);
+        });
+        historyParcels = history;
+        deliveredCount = delivered;
+        cancelledCount = cancelled;
+        isLoadingHistory = false;
+      });
+    } catch (e) {
+      debugPrint('Error fetching history parcels: $e');
+      if (!mounted) return;
+      setState(() => isLoadingHistory = false);
+    }
+  }
+
+  bool _isAssignedToCurrentRider(Map<String, dynamic> item) {
+    final riderId = widget.userId.trim();
+    final candidates = [
+      item['user_id'],
+      item['assigned_rider'],
+      item['assigned_rider_id'],
+    ];
+    for (final candidate in candidates) {
+      if (candidate != null && candidate.toString().trim() == riderId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFE3E3E3), Color(0xFFD40000)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: Stack(
+          children: [
+            // 🔴 Top gradient header
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                height: 200,
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF800000), Color(0xFFFF0000)],
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                  ),
+                  borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(40),
+                    bottomRight: Radius.circular(40),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 50),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        IconButton(
+                          icon:
+                              const Icon(Icons.arrow_back, color: Colors.white),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                        const Expanded(
+                          child: Center(
+                            child: Text(
+                              "Delivery History",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 26,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 48),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // 📦 Page content
+            Padding(
+              padding: const EdgeInsets.only(top: 100.0),
+              child: ListView(
+                padding: const EdgeInsets.all(20),
+                children: [
+                  _historyParcelCard(),
+                  const SizedBox(height: 20),
+                  _parcelHistoryCard(),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// ✅ TOTAL SUMMARY CARD (Dynamic from DB)
+  Widget _historyParcelCard() {
+    final total = deliveredCount + cancelledCount;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Text(
+            "Total History of Parcel",
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              Column(
+                children: [
+                  const Text("Delivered",
+                      style:
+                          TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                  Text(deliveredCount.toString(),
+                      style: const TextStyle(
+                          fontSize: 25,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green)),
+                ],
+              ),
+              Column(
+                children: [
+                  const Text("Total",
+                      style:
+                          TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                  Text(total.toString(),
+                      style: const TextStyle(
+                        fontSize: 25,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey
+                      )),
+                ],
+              ),
+              Column(
+                children: [
+                  const Text("Not Delivered",
+                      style:
+                          TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                  Text(cancelledCount.toString(),
+                      style: const TextStyle(
+                          fontSize: 25,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.red)),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: SizedBox(
+              height: 14,
+              child: total == 0
+                  ? Container(color: Colors.black12)
+                  : Row(
+                      children: [
+                        Expanded(
+                          flex: deliveredCount > 0 ? deliveredCount : 1,
+                          child: Container(color: Colors.green),
+                        ),
+                        Expanded(
+                          flex: cancelledCount > 0 ? cancelledCount : 1,
+                          child: Container(color: Colors.red),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// ✅ HISTORY LIST CARD
+  Widget _parcelHistoryCard() {
+    String searchQuery = '';
+    String sortFilter = 'All';
+    int currentPage = 0;
+
+    return StatefulBuilder(
+      builder: (context, setState) {
+        final visibleParcels = historyParcels
+            .where((parcel) =>
+                parcel['parcel_id']
+                    .toString()
+                    .toLowerCase()
+                    .contains(searchQuery.toLowerCase()) &&
+                (sortFilter == 'All' ||
+                    parcel['status'].toString().toLowerCase() ==
+                        sortFilter.toLowerCase()))
+            .toList();
+
+        final totalItems = visibleParcels.length;
+        final totalPages =
+            totalItems == 0 ? 1 : ((totalItems - 1) ~/ _itemsPerPage) + 1;
+        final safePage = currentPage.clamp(0, totalPages - 1);
+        final startIndex = safePage * _itemsPerPage;
+        final endIndex = (startIndex + _itemsPerPage).clamp(0, totalItems);
+        final pageItems = totalItems == 0
+            ? <Map<String, dynamic>>[]
+            : visibleParcels.sublist(startIndex, endIndex);
+
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 10,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              const Text(
+                "Parcel Delivery History",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: TextField(
+                      onChanged: (value) {
+                        setState(() {
+                          searchQuery = value;
+                          currentPage = 0;
+                        });
+                      },
+                      decoration: InputDecoration(
+                        prefixIcon: const Icon(Icons.search),
+                        hintText: 'Search by Parcel ID...',
+                        contentPadding: const EdgeInsets.symmetric(
+                            vertical: 0, horizontal: 16),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    flex: 2,
+                    child: DropdownButtonFormField<String>(
+                      value: sortFilter,
+                      decoration: InputDecoration(
+                        contentPadding:
+                            const EdgeInsets.symmetric(horizontal: 12),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      items: ['All', 'Delivered', 'Cancelled']
+                          .map((value) => DropdownMenuItem(
+                                value: value,
+                                child: Text(value),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() {
+                            sortFilter = value;
+                            currentPage = 0;
+                          });
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (isLoadingHistory)
+                const Center(child: CircularProgressIndicator())
+              else if (pageItems.isEmpty)
+                const Center(child: Text("No matching parcels found"))
+              else
+                Column(
+                  children: pageItems
+                      .map((parcel) => _historyRow(
+                            parcel['parcel_id'].toString(),
+                            parcel['timestamp'] ?? "",
+                            parcel['status'],
+                          ))
+                      .toList(),
+                ),
+              const SizedBox(height: 10),
+              if (!isLoadingHistory && totalItems > 0)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton(
+                      onPressed: safePage > 0
+                          ? () => setState(() => currentPage = safePage - 1)
+                          : null,
+                      child: const Text("Previous"),
+                    ),
+                    Text(
+                      "Page ${safePage + 1} of $totalPages",
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    TextButton(
+                      onPressed: safePage < totalPages - 1
+                          ? () => setState(() => currentPage = safePage + 1)
+                          : null,
+                      child: const Text("Next"),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _historyRow(String id, String date, String status) {
+    final isDelivered = status == "Delivered";
+    final statusColor = isDelivered ? Colors.green : Colors.red;
+    final statusLabel = isDelivered ? "Delivered" : "Not Delivered";
+    final parsed = DateTime.tryParse(date);
+    final displayDate = parsed != null
+        ? DateFormat('MMM d • h:mm a').format(parsed.toLocal())
+        : date;
+
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) =>
+                ParcelInformationPage(parcelId: int.parse(id)),
+          ),
+        );
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.inventory_2, size: 18, color: statusColor),
+                const SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("Parcel #$id",
+                        style: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w600)),
+                    Text(displayDate,
+                        style: const TextStyle(
+                            fontSize: 12, color: Colors.black54)),
+                  ],
+                ),
+              ],
+            ),
+            Text(statusLabel,
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: statusColor)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
