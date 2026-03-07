@@ -38,6 +38,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String gender = "";
   String age = "";
   String birthDate = "";
+  String pnumber = "";
   String profileUrl = "";
   XFile? _pendingProfileImage;
 
@@ -135,7 +136,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final response = await Supabase.instance.client
         .from('users')
         .select(
-            'username, fname, mname, lname, email, gender, age, birth_date, profile_url')
+            'username, fname, mname, lname, email, gender, age, birth_date, pnumber, profile_url')
         .eq('user_id', widget.userId)
         .maybeSingle();
 
@@ -150,6 +151,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         gender = response['gender'] ?? "";
         age = response['age']?.toString() ?? "";
         birthDate = response['birth_date'] ?? "";
+        pnumber = response['pnumber'] ?? "";
         profileUrl = response['profile_url'] ?? "";
       });
     }
@@ -1108,7 +1110,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       infoRow("Gender", gender),
                       infoRow("Age", age),
                       infoRow("Birthday", birthDate),
-                      const SizedBox(height: 80),
+                      infoRow("Phone Number", pnumber.isEmpty ? "" : "+63 $pnumber"),
+                      const SizedBox(height: 20),
                       SizedBox(
                         width: 300,
                         child: OutlinedButton(

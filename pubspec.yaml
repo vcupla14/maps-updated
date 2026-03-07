@@ -69,6 +69,7 @@ flutter:
     - assets/images/floods_icon.png
     - assets/images/weather_icon.png
     - floods_datasets/rizal_floodprone_areas.csv
+    - floods_datasets/flood_testing_capstone.csv
     - alert_dataset/rizal_no_overtaking_zone.geojson
 
   fonts:

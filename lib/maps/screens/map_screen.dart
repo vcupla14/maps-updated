@@ -68,6 +68,7 @@ class _MapScreenState extends State<MapScreen> {
   Timer? _weatherRefreshTimer;
   Timer? _alertAutoCloseTimer;
   Timer? _rawRenderTimer;
+  Timer? _routeUpdateBannerTimer;
 
   int _selectedIndex = 1;
 
@@ -126,6 +127,8 @@ class _MapScreenState extends State<MapScreen> {
   static const Duration _weatherCacheTtl = Duration(minutes: 10);
   static const Duration _weatherRefreshInterval = Duration(minutes: 5);
   bool _rerouteInProgress = false;
+  bool _showRouteUpdateBanner = false;
+  String _routeUpdateBannerMessage = '';
 
   static const int _routeSampleStride = 6;
   static const double _floodHitDistanceMeters = 40;
@@ -218,8 +221,26 @@ class _MapScreenState extends State<MapScreen> {
     _weatherRefreshTimer?.cancel();
     _alertAutoCloseTimer?.cancel();
     _rawRenderTimer?.cancel();
+    _routeUpdateBannerTimer?.cancel();
     _voiceAlertService.stop();
     super.dispose();
+  }
+
+  void _showRouteUpdateBottomBanner(String message) {
+    _routeUpdateBannerTimer?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _routeUpdateBannerMessage = message;
+      _showRouteUpdateBanner = true;
+    });
+    unawaited(_logFloodAffectedRerouteEvent());
+
+    _routeUpdateBannerTimer = Timer(const Duration(seconds: 5), () {
+      if (!mounted) return;
+      setState(() {
+        _showRouteUpdateBanner = false;
+      });
+    });
   }
 
   void _startWeatherAutoRefresh() {
@@ -1153,36 +1174,47 @@ class _MapScreenState extends State<MapScreen> {
     if (_floodsLoaded || _floodsLoading) return;
     _floodsLoading = true;
     try {
-      final csv = await rootBundle.loadString(
-        'floods_datasets/rizal_floodprone_areas.csv',
-      );
-      final lines = csv.split(RegExp(r'\r?\n'));
       final points = <LatLng>[];
-      int idx = 0;
+      final seen = <String>{};
 
-      for (final line in lines) {
-        final trimmed = line.trim();
-        if (trimmed.isEmpty) continue;
-        if (idx == 0 && trimmed.toLowerCase().startsWith('x,')) {
-          idx++;
-          continue;
+      Future<void> addCsvPoints(String assetPath) async {
+        final csv = await rootBundle.loadString(assetPath);
+        final lines = csv.split(RegExp(r'\r?\n'));
+
+        for (int idx = 0; idx < lines.length; idx++) {
+          final trimmed = lines[idx].trim();
+          if (trimmed.isEmpty) continue;
+          if (idx == 0 && trimmed.toLowerCase().startsWith('x,')) continue;
+
+          final parts = trimmed.split(',');
+          if (parts.length < 2) continue;
+
+          final x = double.tryParse(parts[0]);
+          final y = double.tryParse(parts[1]);
+          if (x == null || y == null) continue;
+
+          late final LatLng latLng;
+          final isLonLat = x >= -180 && x <= 180 && y >= -90 && y <= 90;
+          if (isLonLat) {
+            latLng = LatLng(y, x);
+          } else {
+            latLng = _utmToLatLng(
+              x,
+              y,
+              _utmZoneNumber,
+              _utmNorthernHemisphere,
+            );
+          }
+
+          final key =
+              '${latLng.latitude.toStringAsFixed(6)},${latLng.longitude.toStringAsFixed(6)}';
+          if (!seen.add(key)) continue;
+          points.add(latLng);
         }
-        final parts = trimmed.split(',');
-        if (parts.length < 2) continue;
-        final easting = double.tryParse(parts[0]);
-        final northing = double.tryParse(parts[1]);
-        if (easting == null || northing == null) continue;
-
-        final latLng = _utmToLatLng(
-          easting,
-          northing,
-          _utmZoneNumber,
-          _utmNorthernHemisphere,
-        );
-
-        points.add(latLng);
-        idx++;
       }
+
+      await addCsvPoints('floods_datasets/rizal_floodprone_areas.csv');
+      await addCsvPoints('floods_datasets/flood_testing_capstone.csv');
 
       if (!mounted) return;
       setState(() {
@@ -1359,13 +1391,28 @@ class _MapScreenState extends State<MapScreen> {
 
     try {
       for (final place in _priorityBarangayWeatherPlaces) {
-        final weather = await _fetchWeatherAt(place.latitude, place.longitude);
+        _WeatherInfo? weather;
+        try {
+          if (place.name == _manualRainingPlaceName) {
+            weather = const _WeatherInfo(
+              iconCode: _manualRainingIconCode,
+              condition: 'raining',
+            );
+          } else {
+            weather = await _fetchWeatherAt(place.latitude, place.longitude);
+          }
+        } catch (_) {
+          weather = null;
+        }
         if (weather == null) continue;
         conditions[place.name] = weather.condition;
 
         final iconDescriptor = await _resolveWeatherIcon(weather.iconCode);
-        for (int i = 0; i < _weatherDisplayOffsetsMeters.length; i++) {
-          final offset = _weatherDisplayOffsetsMeters[i];
+        final offsets = place.name == _manualRainingPlaceName
+            ? const <Offset>[Offset(0, 0)]
+            : _weatherDisplayOffsetsMeters;
+        for (int i = 0; i < offsets.length; i++) {
+          final offset = offsets[i];
           final position = _offsetByMeters(
             place,
             northMeters: offset.dy,
@@ -1740,9 +1787,54 @@ class _MapScreenState extends State<MapScreen> {
 
     if (!mounted) return;
 
+    RouteFetchResult selectedResult = result;
+    var floodAvoidanceRerouteApplied = false;
+    if (_avoidFloodedAreas) {
+      await _ensureFloodWeatherDataForAvoidance(force: true);
+      if (!mounted) return;
+
+      final routeHasFloodHits = _countFloodHits(selectedResult.polyline) > 0;
+      final routeHasRain = _isRainingNearRoute(selectedResult.polyline);
+      if (routeHasFloodHits && routeHasRain) {
+        final candidates = await RouteFetchService.fetchMultiStopRouteCandidates(
+          currentLocation: _currentLocation!,
+          destinations: _destinations,
+        );
+        if (!mounted) return;
+
+        RouteFetchResult bestCandidate = selectedResult;
+        final baseHits = _countFloodHits(selectedResult.polyline);
+        var bestHits = baseHits;
+
+        for (final c in candidates) {
+          final hits = _countFloodHits(c.polyline);
+          if (hits < bestHits) {
+            bestHits = hits;
+            bestCandidate = c;
+          }
+        }
+
+        if (bestHits >= baseHits) {
+          final detour = await _buildDetourAvoidanceRoute(
+            baseRoute: selectedResult.polyline,
+            currentHits: baseHits,
+          );
+          if (detour != null) {
+            bestCandidate = detour;
+            bestHits = _countFloodHits(detour.polyline);
+          }
+        }
+
+        if (bestHits < baseHits) {
+          selectedResult = bestCandidate;
+          floodAvoidanceRerouteApplied = true;
+        }
+      }
+    }
+
     setState(() {
-      _routePolyline = result.polyline;
-      _routeSteps = result.steps;
+      _routePolyline = selectedResult.polyline;
+      _routeSteps = selectedResult.steps;
       _currentStepIndex = 0;
       _distanceToNextStepMeters = 0;
 
@@ -1756,11 +1848,15 @@ class _MapScreenState extends State<MapScreen> {
 
     _fitRouteBounds();
 
-    if (result.legs != null) {
+    if (selectedResult.legs != null) {
       RouteFetchService.applyLegsToDestinations(
-        legs: result.legs!,
+        legs: selectedResult.legs!,
         destinations: _destinations,
       );
+    }
+
+    if (floodAvoidanceRerouteApplied) {
+      unawaited(_logFloodAffectedRerouteEvent());
     }
 
     await _maybeApplyFloodWeatherReroute();
@@ -1771,12 +1867,7 @@ class _MapScreenState extends State<MapScreen> {
     if (_destinations.isEmpty || _currentLocation == null) return;
     if (_routePolyline.isEmpty) return;
 
-    if (!_floodsLoaded) {
-      await _loadFloodProneAreas();
-    }
-    if (_weatherConditionByPlace.isEmpty || force) {
-      await _loadWeatherMarkers(force: force);
-    }
+    await _ensureFloodWeatherDataForAvoidance(force: force);
     if (!mounted || _floodPoints.isEmpty) return;
 
     final currentFloodHits = _countFloodHits(_routePolyline);
@@ -1791,7 +1882,8 @@ class _MapScreenState extends State<MapScreen> {
         currentLocation: _currentLocation!,
         destinations: _destinations,
       );
-      if (!mounted || candidates.isEmpty) return;
+      if (!mounted) return;
+      if (candidates.isEmpty) return;
 
       RouteFetchResult? best;
       var bestFloodHits = currentFloodHits;
@@ -1804,7 +1896,18 @@ class _MapScreenState extends State<MapScreen> {
         }
       }
 
-      if (best == null) {
+      if (best == null || bestFloodHits >= currentFloodHits) {
+        final detour = await _buildDetourAvoidanceRoute(
+          baseRoute: _routePolyline,
+          currentHits: currentFloodHits,
+        );
+        if (detour != null) {
+          best = detour;
+          bestFloodHits = _countFloodHits(detour.polyline);
+        }
+      }
+
+      if (best == null || bestFloodHits >= currentFloodHits) {
         return;
       }
 
@@ -1828,16 +1931,76 @@ class _MapScreenState extends State<MapScreen> {
       }
 
       _fitRouteBounds();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Route updated: avoiding flooded road due to rain'),
-          backgroundColor: Colors.red,
-          duration: Duration(seconds: 2),
-        ),
+      _showRouteUpdateBottomBanner(
+        'Route updated: Avoiding\nflood prone area(s) due to rain',
       );
     } finally {
       _rerouteInProgress = false;
     }
+  }
+
+  Future<void> _ensureFloodWeatherDataForAvoidance({bool force = false}) async {
+    if (!_floodsLoaded) {
+      await _loadFloodProneAreas();
+    }
+    if (_weatherConditionByPlace.isEmpty || force) {
+      await _loadWeatherMarkers(force: force);
+    }
+  }
+
+  bool _hasFloodRiskAtAnyDestination() {
+    if (_destinations.isEmpty || _floodPoints.isEmpty) return false;
+    for (final dest in _destinations) {
+      if (_isPointInActiveFloodRisk(dest.location)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _isPointInActiveFloodRisk(LatLng point) {
+    if (!_isRainingNearPoint(point)) return false;
+    return _isFloodPointNearPoint(point, radiusMeters: _floodHitDistanceMeters);
+  }
+
+  bool _isRainingNearPoint(LatLng point) {
+    for (final place in _priorityBarangayWeatherPlaces) {
+      final condition = _weatherConditionByPlace[place.name];
+      if (condition == null || !_isRainCondition(condition)) continue;
+
+      final distance = Geolocator.distanceBetween(
+        point.latitude,
+        point.longitude,
+        place.latitude,
+        place.longitude,
+      );
+      if (distance <= _routeWeatherLinkMeters) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _isFloodPointNearPoint(LatLng point, {required double radiusMeters}) {
+    if (_floodPoints.isEmpty) return false;
+
+    final latPad = radiusMeters / 111320.0;
+    final lonDenom = 111320.0 * math.cos(point.latitude * math.pi / 180.0);
+    final lonPad = lonDenom > 0 ? radiusMeters / lonDenom : latPad;
+
+    for (final flood in _floodPoints) {
+      if ((flood.latitude - point.latitude).abs() > latPad) continue;
+      if ((flood.longitude - point.longitude).abs() > lonPad) continue;
+
+      final d = Geolocator.distanceBetween(
+        point.latitude,
+        point.longitude,
+        flood.latitude,
+        flood.longitude,
+      );
+      if (d <= radiusMeters) return true;
+    }
+    return false;
   }
 
   bool _isRainingNearRoute(List<LatLng> route) {
@@ -1845,7 +2008,7 @@ class _MapScreenState extends State<MapScreen> {
       final condition = _weatherConditionByPlace[place.name];
       if (condition == null || !_isRainCondition(condition)) continue;
 
-      for (int i = 0; i < route.length; i += _routeSampleStride) {
+      for (int i = 0; i < route.length; i++) {
         final p = route[i];
         final distance = Geolocator.distanceBetween(
           p.latitude,
@@ -1877,7 +2040,7 @@ class _MapScreenState extends State<MapScreen> {
     var minLng = route.first.longitude;
     var maxLng = route.first.longitude;
 
-    for (int i = 0; i < route.length; i += _routeSampleStride) {
+    for (int i = 0; i < route.length; i++) {
       final p = route[i];
       if (p.latitude < minLat) minLat = p.latitude;
       if (p.latitude > maxLat) maxLat = p.latitude;
@@ -1896,7 +2059,7 @@ class _MapScreenState extends State<MapScreen> {
     if (candidateFloodPoints.isEmpty) return 0;
 
     var hits = 0;
-    for (int i = 0; i < route.length; i += _routeSampleStride) {
+    for (int i = 0; i < route.length; i++) {
       final p = route[i];
       for (final flood in candidateFloodPoints) {
         final d = Geolocator.distanceBetween(
@@ -1912,6 +2075,180 @@ class _MapScreenState extends State<MapScreen> {
       }
     }
     return hits;
+  }
+
+  Future<RouteFetchResult?> _buildDetourAvoidanceRoute({
+    required List<LatLng> baseRoute,
+    required int currentHits,
+  }) async {
+    if (_currentLocation == null || _destinations.isEmpty || currentHits <= 0) {
+      return null;
+    }
+
+    final hotspot = _firstFloodHotspotOnRoute(baseRoute);
+    if (hotspot == null) return null;
+
+    final detourSeeds = _buildDetourSeeds(hotspot);
+    RouteFetchResult? best;
+    var bestHits = currentHits;
+
+    final snappedSeeds = await Future.wait(
+      detourSeeds.map((seed) async {
+        try {
+          return await OSRMService.getNearestRoadPoint(seed)
+                  .timeout(const Duration(seconds: 2)) ??
+              seed;
+        } catch (_) {
+          return seed;
+        }
+      }),
+    );
+
+    final orderedSnappedSeeds = <LatLng>[];
+    final seen = <String>{};
+    for (final snapped in snappedSeeds) {
+      final key =
+          '${snapped.latitude.toStringAsFixed(6)},${snapped.longitude.toStringAsFixed(6)}';
+      if (seen.add(key)) {
+        orderedSnappedSeeds.add(snapped);
+      }
+    }
+
+    for (final snapped in orderedSnappedSeeds) {
+      if (_isFloodPointNearPoint(
+        snapped,
+        radiusMeters: _floodHitDistanceMeters * 1.5,
+      )) {
+        continue;
+      }
+
+      final withDetour = <DestinationInfo>[
+        DestinationInfo(location: snapped, name: 'Detour'),
+        ..._destinations,
+      ];
+
+      final candidate = await RouteFetchService.fetchMultiStopRoute(
+        currentLocation: _currentLocation!,
+        destinations: withDetour,
+      );
+      if (candidate.polyline.length < 2) continue;
+
+      final hits = _countFloodHits(candidate.polyline);
+      if (hits < bestHits) {
+        bestHits = hits;
+        best = candidate;
+        if (hits == 0) break;
+      }
+    }
+
+    return best;
+  }
+
+  LatLng? _firstFloodHotspotOnRoute(List<LatLng> route) {
+    if (route.isEmpty || _floodPoints.isEmpty) return null;
+
+    var minLat = route.first.latitude;
+    var maxLat = route.first.latitude;
+    var minLng = route.first.longitude;
+    var maxLng = route.first.longitude;
+    for (final p in route) {
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+
+    const pad = 0.004;
+    final candidateFloodPoints = _floodPoints.where((f) {
+      return f.latitude >= minLat - pad &&
+          f.latitude <= maxLat + pad &&
+          f.longitude >= minLng - pad &&
+          f.longitude <= maxLng + pad;
+    }).toList(growable: false);
+    if (candidateFloodPoints.isEmpty) return null;
+
+    for (final p in route) {
+      for (final flood in candidateFloodPoints) {
+        final d = Geolocator.distanceBetween(
+          p.latitude,
+          p.longitude,
+          flood.latitude,
+          flood.longitude,
+        );
+        if (d <= _floodHitDistanceMeters) {
+          return flood;
+        }
+      }
+    }
+    return null;
+  }
+
+  List<LatLng> _buildDetourSeeds(LatLng center) {
+    const offsets = <Offset>[
+      Offset(140, 0),
+      Offset(-140, 0),
+      Offset(0, 140),
+      Offset(0, -140),
+      Offset(220, 0),
+      Offset(-220, 0),
+      Offset(0, 220),
+      Offset(0, -220),
+      Offset(140, 140),
+      Offset(-140, 140),
+      Offset(140, -140),
+      Offset(-140, -140),
+    ];
+
+    final seeds = <LatLng>[];
+    final seen = <String>{};
+    for (final off in offsets) {
+      final seed = _offsetLatLngByMeters(
+        center,
+        northMeters: off.dy,
+        eastMeters: off.dx,
+      );
+      final key =
+          '${seed.latitude.toStringAsFixed(6)},${seed.longitude.toStringAsFixed(6)}';
+      if (seen.add(key)) {
+        seeds.add(seed);
+      }
+    }
+    return seeds;
+  }
+
+  LatLng _offsetLatLngByMeters(
+    LatLng base, {
+    required double northMeters,
+    required double eastMeters,
+  }) {
+    const metersPerDegreeLat = 111320.0;
+    final latRad = base.latitude * math.pi / 180.0;
+    final metersPerDegreeLon = metersPerDegreeLat * math.cos(latRad);
+    final lat = base.latitude + (northMeters / metersPerDegreeLat);
+    final lon = base.longitude + (eastMeters / metersPerDegreeLon);
+    return LatLng(lat, lon);
+  }
+
+  void _clearRouteForFloodRisk(String message) {
+    if (!mounted) return;
+    setState(() {
+      _routePolyline = [];
+      _routeTrimStartIdx = 0;
+      _routeProgressIdx = 0;
+      _routeSteps = [];
+      _currentStepIndex = 0;
+      _distanceToNextStepMeters = 0;
+      _lastTrimIdx = 0;
+      _prevStepDistance = null;
+      _distanceIncreasingCount = 0;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   Future<void> _loadPedestrianZones() async {
@@ -2856,6 +3193,26 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  Future<void> _logFloodAffectedRerouteEvent() async {
+    final point =
+        _currentLocation ??
+        _rawLocation ??
+        (_routePolyline.isNotEmpty ? _routePolyline.first : null);
+    final now = DateTime.now();
+
+    try {
+      await Supabase.instance.client.from('rider_flood_affected').insert({
+        'user_id': widget.userId,
+        'name': _riderFullName.isEmpty ? null : _riderFullName,
+        'lat': point?.latitude,
+        'lng': point?.longitude,
+        'date': now.toIso8601String(),
+      });
+    } catch (_) {
+      // Keep silent to avoid interrupting navigation.
+    }
+  }
+
   // ================= BUILD =================
 
   @override
@@ -3683,6 +4040,75 @@ class _MapScreenState extends State<MapScreen> {
                     : () => _dismissAlert(activeAlertType!),
               ),
             ),
+          Positioned(
+            left: 14,
+            right: 14,
+            bottom: (_isNavigating ? 130.0 : (_hasDestination ? 162.0 : 58.0)) +
+                MediaQuery.of(context).padding.bottom,
+            child: IgnorePointer(
+              child: AnimatedSlide(
+                duration: const Duration(milliseconds: 260),
+                curve: Curves.easeOutCubic,
+                offset: _showRouteUpdateBanner
+                    ? Offset.zero
+                    : const Offset(0, 1),
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOut,
+                  opacity: _showRouteUpdateBanner ? 1 : 0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF7F7),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFF29A9A)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.22),
+                          blurRadius: 24,
+                          spreadRadius: 1,
+                          offset: const Offset(0, 10),
+                        ),
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.10),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.only(top: 1),
+                          child: Icon(
+                            Icons.warning_amber_rounded,
+                            color: Color(0xFFC01818),
+                            size: 23,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _routeUpdateBannerMessage,
+                            style: const TextStyle(
+                              color: Color(0xFF5E0D0D),
+                              fontSize: 14,
+                              height: 1.2,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
           if (_isComputingRoute)
             Positioned.fill(
               child: Container(
@@ -3966,10 +4392,18 @@ class _WeatherInfo {
 }
 
 const List<_WeatherPlace> _priorityBarangayWeatherPlaces = [
+  _WeatherPlace(
+    name: _manualRainingPlaceName,
+    latitude: 14.639145669663506,
+    longitude: 121.06243166283869,
+  ),
   _WeatherPlace(name: 'Brgy Mayamot', latitude: 14.6206, longitude: 121.1160),
   _WeatherPlace(name: 'Brgy Cupang', latitude: 14.5897, longitude: 121.1012),
   _WeatherPlace(name: 'Brgy Mambugan', latitude: 14.5878, longitude: 121.1337),
 ];
+
+const String _manualRainingPlaceName = 'Flood Testing (Raining)';
+const String _manualRainingIconCode = '10d';
 
 const List<Offset> _weatherDisplayOffsetsMeters = [
   Offset(0, 0),

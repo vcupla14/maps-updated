@@ -195,6 +195,23 @@ class _PersonalInformationScreenState extends State<PersonalInformationScreen> {
     return null;
   }
 
+  Future<bool> _isDuplicateFullName({
+    required String fname,
+    required String mname,
+    required String lname,
+  }) async {
+    final result = await supabase
+        .from('users')
+        .select('user_id')
+        .eq('fname', fname)
+        .eq('mname', mname)
+        .eq('lname', lname)
+        .neq('user_id', widget.userId)
+        .limit(1);
+
+    return (result as List).isNotEmpty;
+  }
+
   /// SAVE DATA
   Future<void> _saveData() async {
     if (!_formKey.currentState!.validate()) return;
@@ -214,6 +231,24 @@ class _PersonalInformationScreenState extends State<PersonalInformationScreen> {
     setState(() => _loading = true);
 
     try {
+      final isDuplicate = await _isDuplicateFullName(
+        fname: formattedFname,
+        mname: formattedMname,
+        lname: formattedLname,
+      );
+
+      if (isDuplicate) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('This full name already exists in the database.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() => _loading = false);
+        return;
+      }
+
       // Compute age from birth date
       final birthDate = DateTime.parse(_birthDateController.text);
       final age = DateTime.now().year -
@@ -255,8 +290,16 @@ class _PersonalInformationScreenState extends State<PersonalInformationScreen> {
         ),
       );
     } on PostgrestException catch (e) {
+      final isUniqueViolation = e.code == '23505';
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error saving information: ${e.message}')),
+        SnackBar(
+          content: Text(
+            isUniqueViolation
+                ? 'This full name already exists in the database.'
+                : 'Error saving information: ${e.message}',
+          ),
+          backgroundColor: Colors.red,
+        ),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(

@@ -403,7 +403,7 @@ class _ParcelsPageState extends State<ParcelsPage> {
                               "Parcels",
                               style: TextStyle(
                                 color: Colors.white,
-                                fontSize: 26,
+                                fontSize: 20,
                                 fontWeight: FontWeight.bold,
                                 letterSpacing: 1.2,
                               ),
