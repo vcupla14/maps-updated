@@ -106,6 +106,7 @@ class _MapScreenState extends State<MapScreen> {
   static const double _floodOuterCircleRadiusMeters = 52;
   static const int _maxVisibleFloodCircles = 600;
 
+  
   List<LatLng> _floodPoints = [];
   List<gmaps.Circle> _floodCircles = [];
   bool _floodsLoaded = false;
@@ -132,8 +133,10 @@ class _MapScreenState extends State<MapScreen> {
 
   static const int _routeSampleStride = 6;
   static const double _floodHitDistanceMeters = 40;
-  static const double _routeWeatherLinkMeters = 3500;
-
+  static const double _routeWeatherLinkMeters = 8000;
+  List<LatLng> _debugDetourWaypoints = [];
+  LatLng? _debugFloodHotspot;
+  LatLng? _debugBestWaypoint;
   /// Snapped location (for route progress)
   LatLng? _currentLocation;
 
@@ -941,7 +944,7 @@ class _MapScreenState extends State<MapScreen> {
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setModalState) {
-            final height = MediaQuery.of(context).size.height * (1 / 4);
+            final height = MediaQuery.of(context).size.height * 0.30;
             return Container(
               height: height,
               decoration: const BoxDecoration(
@@ -1862,82 +1865,168 @@ class _MapScreenState extends State<MapScreen> {
     await _maybeApplyFloodWeatherReroute();
   }
 
-  Future<void> _maybeApplyFloodWeatherReroute({bool force = false}) async {
-    if (!_avoidFloodedAreas || _rerouteInProgress) return;
-    if (_destinations.isEmpty || _currentLocation == null) return;
-    if (_routePolyline.isEmpty) return;
+Future<void> _maybeApplyFloodWeatherReroute({bool force = false}) async {
+  print('🌊 === FLOOD REROUTE CHECK START ===');
+  
+  if (!_avoidFloodedAreas) {
+    print('❌ Avoid flooded areas is OFF');
+    return;
+  }
+  
+  if (_rerouteInProgress) {
+    print('❌ Reroute already in progress');
+    return;
+  }
+  
+  if (_destinations.isEmpty || _currentLocation == null) {
+    print('❌ No destinations or current location');
+    return;
+  }
+  
+  if (_routePolyline.isEmpty) {
+    print('❌ Route polyline is empty');
+    return;
+  }
 
-    await _ensureFloodWeatherDataForAvoidance(force: force);
-    if (!mounted || _floodPoints.isEmpty) return;
+  print('✅ Basic checks passed, loading flood/weather data...');
+  await _ensureFloodWeatherDataForAvoidance(force: force);
+  
+  if (!mounted || _floodPoints.isEmpty) {
+    print('❌ Not mounted or no flood points loaded');
+    return;
+  }
+  
+  print('✅ Flood points loaded: ${_floodPoints.length} points');
 
-    final currentFloodHits = _countFloodHits(_routePolyline);
-    if (currentFloodHits <= 0) return;
+  final currentFloodHits = _countFloodHits(_routePolyline);
+  print('📊 Current route flood hits: $currentFloodHits');
+  
+  if (currentFloodHits <= 0) {
+    print('✅ No flood hits on current route - no reroute needed');
+    return;
+  }
 
-    final rainingOnRoute = _isRainingNearRoute(_routePolyline);
-    if (!rainingOnRoute) return;
+  final rainingOnRoute = _isRainingNearRoute(_routePolyline);
+  print('🌧️ Is raining near route: $rainingOnRoute');
+  
+  if (!rainingOnRoute) {
+    print('❌ Not raining near route - no reroute needed');
+    return;
+  }
 
-    _rerouteInProgress = true;
-    try {
-      final candidates = await RouteFetchService.fetchMultiStopRouteCandidates(
-        currentLocation: _currentLocation!,
+  print('🔄 Starting reroute process...');
+  _rerouteInProgress = true;
+  
+  try {
+    print('📍 Current route has $currentFloodHits flood hits');
+    print('⏱️ Waiting 0.5 seconds...');
+    
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) {
+      print('❌ Not mounted after delay');
+      return;
+    }
+
+    print('🔍 Fetching alternative route candidates...');
+    final candidates = await RouteFetchService.fetchMultiStopRouteCandidates(
+      currentLocation: _currentLocation!,
+      destinations: _destinations,
+    );
+    
+    if (!mounted) {
+      print('❌ Not mounted after fetching candidates');
+      return;
+    }
+    
+    print('📦 Got ${candidates.length} candidate routes');
+
+    RouteFetchResult? best;
+    var bestFloodHits = currentFloodHits;
+
+    // Check OSRM candidates
+    for (int i = 0; i < candidates.length; i++) {
+      final candidate = candidates[i];
+      if (candidate.polyline.length < 5) {
+        print('   Candidate $i: too short (${candidate.polyline.length} points)');
+        continue;
+      }
+      
+      final hits = _countFloodHits(candidate.polyline);
+      print('   Candidate $i: $hits flood hits');
+      
+      if (hits < bestFloodHits) {
+        bestFloodHits = hits;
+        best = candidate;
+        print('   ✅ New best candidate!');
+      }
+    }
+
+    // Try detour if candidates didn't help
+    if (best == null || bestFloodHits >= currentFloodHits) {
+      print('🚧 Trying detour avoidance route...');
+      final detour = await _buildDetourAvoidanceRoute(
+        baseRoute: _routePolyline,
+        currentHits: currentFloodHits,
+      );
+      if (detour != null) {
+        final detourHits = _countFloodHits(detour.polyline);
+        print('   Detour route: $detourHits flood hits');
+        if (detourHits < bestFloodHits) {
+          best = detour;
+          bestFloodHits = detourHits;
+          print('   ✅ Detour is better!');
+        }
+      } else {
+        print('   ❌ No detour route found');
+      }
+    }
+
+    // Only apply if we found a better route
+    if (best == null) {
+      print('❌ No alternative route found at all');
+      return;
+    }
+    
+    if (bestFloodHits >= currentFloodHits) {
+      print('❌ No better route found (best: $bestFloodHits vs current: $currentFloodHits)');
+      return;
+    }
+
+    print('✅ Found better route! Flood hits: $bestFloodHits (was $currentFloodHits)');
+    print('🔄 Applying new route...');
+
+    setState(() {
+      _routePolyline = best!.polyline;
+      _routeSteps = best.steps;
+      _currentStepIndex = 0;
+      _distanceToNextStepMeters = 0;
+      _lastTrimIdx = 0;
+      _routeTrimStartIdx = 0;
+      _routeProgressIdx = 0;
+      _prevStepDistance = null;
+      _distanceIncreasingCount = 0;
+    });
+
+    if (best.legs != null) {
+      RouteFetchService.applyLegsToDestinations(
+        legs: best.legs!,
         destinations: _destinations,
       );
-      if (!mounted) return;
-      if (candidates.isEmpty) return;
-
-      RouteFetchResult? best;
-      var bestFloodHits = currentFloodHits;
-
-      for (final candidate in candidates) {
-        final hits = _countFloodHits(candidate.polyline);
-        if (hits < bestFloodHits) {
-          bestFloodHits = hits;
-          best = candidate;
-        }
-      }
-
-      if (best == null || bestFloodHits >= currentFloodHits) {
-        final detour = await _buildDetourAvoidanceRoute(
-          baseRoute: _routePolyline,
-          currentHits: currentFloodHits,
-        );
-        if (detour != null) {
-          best = detour;
-          bestFloodHits = _countFloodHits(detour.polyline);
-        }
-      }
-
-      if (best == null || bestFloodHits >= currentFloodHits) {
-        return;
-      }
-
-      setState(() {
-        _routePolyline = best!.polyline;
-        _routeSteps = best.steps;
-        _currentStepIndex = 0;
-        _distanceToNextStepMeters = 0;
-        _lastTrimIdx = 0;
-        _routeTrimStartIdx = 0;
-        _routeProgressIdx = 0;
-        _prevStepDistance = null;
-        _distanceIncreasingCount = 0;
-      });
-
-      if (best.legs != null) {
-        RouteFetchService.applyLegsToDestinations(
-          legs: best.legs!,
-          destinations: _destinations,
-        );
-      }
-
-      _fitRouteBounds();
-      _showRouteUpdateBottomBanner(
-        'Route updated: Avoiding\nflood prone area(s) due to rain',
-      );
-    } finally {
-      _rerouteInProgress = false;
     }
+
+    _fitRouteBounds();
+    
+    print('💬 Showing banner...');
+    _showRouteUpdateBottomBanner(
+      'Rerouted to least flooded route\n($currentFloodHits → $bestFloodHits flood points)',
+    );
+    
+    print('✅ Reroute complete!');
+  } finally {
+    _rerouteInProgress = false;
+    print('🌊 === FLOOD REROUTE CHECK END ===');
   }
+}
 
   Future<void> _ensureFloodWeatherDataForAvoidance({bool force = false}) async {
     if (!_floodsLoaded) {
@@ -2077,72 +2166,102 @@ class _MapScreenState extends State<MapScreen> {
     return hits;
   }
 
-  Future<RouteFetchResult?> _buildDetourAvoidanceRoute({
-    required List<LatLng> baseRoute,
-    required int currentHits,
-  }) async {
-    if (_currentLocation == null || _destinations.isEmpty || currentHits <= 0) {
-      return null;
+Future<RouteFetchResult?> _buildDetourAvoidanceRoute({
+  required List<LatLng> baseRoute,
+  required int currentHits,
+}) async {
+  if (_currentLocation == null || _destinations.isEmpty || currentHits <= 0) {
+    print('❌ Detour skip: no location/destinations or no flood hits');
+    return null;
+  }
+
+  final hotspot = _firstFloodHotspotOnRoute(baseRoute);
+  if (hotspot == null) {
+    print('❌ Detour skip: no flood hotspot found on route');
+    return null;
+  }
+
+  print('🔍 Flood hotspot found at: ${hotspot.latitude}, ${hotspot.longitude}');
+
+  // Create waypoints BEFORE and AFTER the flood zone to force a route around it
+  final detourWaypoints = _buildSmartDetourWaypoints(hotspot, baseRoute);
+  if (detourWaypoints.isEmpty) {
+    print('❌ Detour skip: no waypoints generated');
+    return null;
+  }
+
+  print('📍 Generated ${detourWaypoints.length} detour waypoints');
+
+  RouteFetchResult? best;
+  var bestHits = currentHits;
+
+  int testedCount = 0;
+  for (final waypoint in detourWaypoints) {
+    testedCount++;
+    print('🧪 Testing waypoint $testedCount/${detourWaypoints.length}...');
+    
+    // Snap waypoint to nearest road
+    LatLng snappedWaypoint;
+    try {
+      snappedWaypoint = await OSRMService.getNearestRoadPoint(waypoint)
+              .timeout(const Duration(seconds: 2)) ??
+          waypoint;
+      print('   ✓ Snapped to road');
+    } catch (e) {
+      snappedWaypoint = waypoint;
+      print('   ⚠️ Failed to snap: $e');
     }
 
-    final hotspot = _firstFloodHotspotOnRoute(baseRoute);
-    if (hotspot == null) return null;
+    // Skip if waypoint is in a flood zone
+    if (_isFloodPointNearPoint(
+      snappedWaypoint,
+      radiusMeters: _floodHitDistanceMeters * .5,
+    )) {
+      print('   ❌ Waypoint is in flood zone, skipping');
+      continue;
+    }
 
-    final detourSeeds = _buildDetourSeeds(hotspot);
-    RouteFetchResult? best;
-    var bestHits = currentHits;
+    // Create route with waypoint
+    final withWaypoint = <DestinationInfo>[
+      DestinationInfo(location: snappedWaypoint, name: 'Detour'),
+      ..._destinations,
+    ];
 
-    final snappedSeeds = await Future.wait(
-      detourSeeds.map((seed) async {
-        try {
-          return await OSRMService.getNearestRoadPoint(seed)
-                  .timeout(const Duration(seconds: 2)) ??
-              seed;
-        } catch (_) {
-          return seed;
-        }
-      }),
+    print('   🛣️ Fetching route with waypoint...');
+    final candidate = await RouteFetchService.fetchMultiStopRoute(
+      currentLocation: _currentLocation!,
+      destinations: withWaypoint,
     );
 
-    final orderedSnappedSeeds = <LatLng>[];
-    final seen = <String>{};
-    for (final snapped in snappedSeeds) {
-      final key =
-          '${snapped.latitude.toStringAsFixed(6)},${snapped.longitude.toStringAsFixed(6)}';
-      if (seen.add(key)) {
-        orderedSnappedSeeds.add(snapped);
-      }
+    print('   📏 Route has ${candidate.polyline.length} points');
+
+    if (candidate.polyline.length < 5) {
+      print('   ❌ Route too short');
+      continue;
     }
 
-    for (final snapped in orderedSnappedSeeds) {
-      if (_isFloodPointNearPoint(
-        snapped,
-        radiusMeters: _floodHitDistanceMeters * 1.5,
-      )) {
-        continue;
-      }
-
-      final withDetour = <DestinationInfo>[
-        DestinationInfo(location: snapped, name: 'Detour'),
-        ..._destinations,
-      ];
-
-      final candidate = await RouteFetchService.fetchMultiStopRoute(
-        currentLocation: _currentLocation!,
-        destinations: withDetour,
-      );
-      if (candidate.polyline.length < 2) continue;
-
-      final hits = _countFloodHits(candidate.polyline);
-      if (hits < bestHits) {
-        bestHits = hits;
-        best = candidate;
-        if (hits == 0) break;
+    final hits = _countFloodHits(candidate.polyline);
+    print('   💧 Flood hits: $hits (current best: $bestHits)');
+    
+    if (hits < bestHits) {
+      bestHits = hits;
+      best = candidate;
+      print('   ✅ New best route!');
+      if (hits == 0) {
+        print('   🎉 Perfect route with 0 hits!');
+        break;
       }
     }
-
-    return best;
   }
+
+  if (best != null) {
+    print('✅ Found detour route with $bestHits flood hits (was $currentHits)');
+  } else {
+    print('❌ No valid detour found after testing $testedCount waypoints');
+  }
+
+  return best;
+}
 
   LatLng? _firstFloodHotspotOnRoute(List<LatLng> route) {
     if (route.isEmpty || _floodPoints.isEmpty) return null;
@@ -2215,6 +2334,111 @@ class _MapScreenState extends State<MapScreen> {
     }
     return seeds;
   }
+
+ List<LatLng> _buildSmartDetourWaypoints(LatLng floodCenter, List<LatLng> baseRoute) {
+  // Find where the flood zone is on the route
+  int floodZoneStartIdx = -1;
+  int floodZoneEndIdx = -1;
+  
+  for (int i = 0; i < baseRoute.length; i++) {
+    final p = baseRoute[i];
+    final dist = Geolocator.distanceBetween(
+      p.latitude,
+      p.longitude,
+      floodCenter.latitude,
+      floodCenter.longitude,
+    );
+    
+    if (dist <= _floodHitDistanceMeters * 2) {
+      if (floodZoneStartIdx == -1) {
+        floodZoneStartIdx = i;
+      }
+      floodZoneEndIdx = i;
+    }
+  }
+  
+  if (floodZoneStartIdx == -1 || floodZoneEndIdx == -1) {
+    // Fallback to original detour seeds but farther away
+    return _buildFarDetourSeeds(floodCenter);
+  }
+  
+  // Get a point before the flood zone
+  final beforeIdx = math.max(0, floodZoneStartIdx - 15);
+  final beforePoint = baseRoute[beforeIdx];
+  
+  // Create perpendicular detour points from the "before" position
+  final bearing = _bearingBetween(beforePoint, floodCenter);
+  
+  // Create waypoints at 90° angles (left and right of the flood)
+  // Use LARGER distances to avoid flood zones
+  final waypoints = <LatLng>[];
+  
+  // Left detour (bearing - 90°) - farther distances
+  final leftBearing = (bearing - 90 + 360) % 360;
+  waypoints.add(_offsetByBearing(floodCenter, leftBearing, 400)); // increased from 200
+  waypoints.add(_offsetByBearing(floodCenter, leftBearing, 600)); // increased from 350
+  waypoints.add(_offsetByBearing(floodCenter, leftBearing, 800)); // new
+  
+  // Right detour (bearing + 90°) - farther distances
+  final rightBearing = (bearing + 90) % 360;
+  waypoints.add(_offsetByBearing(floodCenter, rightBearing, 400)); // increased from 200
+  waypoints.add(_offsetByBearing(floodCenter, rightBearing, 600)); // increased from 350
+  waypoints.add(_offsetByBearing(floodCenter, rightBearing, 800)); // new
+  
+  return waypoints;
+}
+List<LatLng> _buildFarDetourSeeds(LatLng center) {
+  // Farther detour points in all directions
+  const offsets = <Offset>[
+    Offset(400, 0),    // East
+    Offset(-400, 0),   // West
+    Offset(0, 400),    // North
+    Offset(0, -400),   // South
+    Offset(600, 0),    // Far East
+    Offset(-600, 0),   // Far West
+    Offset(0, 600),    // Far North
+    Offset(0, -600),   // Far South
+    Offset(400, 400),  // NE
+    Offset(-400, 400), // NW
+    Offset(400, -400), // SE
+    Offset(-400, -400),// SW
+  ];
+
+  final seeds = <LatLng>[];
+  final seen = <String>{};
+  for (final off in offsets) {
+    final seed = _offsetLatLngByMeters(
+      center,
+      northMeters: off.dy,
+      eastMeters: off.dx,
+    );
+    final key =
+        '${seed.latitude.toStringAsFixed(6)},${seed.longitude.toStringAsFixed(6)}';
+    if (seen.add(key)) {
+      seeds.add(seed);
+    }
+  }
+  return seeds;
+}
+
+LatLng _offsetByBearing(LatLng start, double bearing, double distanceMeters) {
+  const earthRadius = 6371000.0; // meters
+  final lat1 = start.latitude * math.pi / 180;
+  final lon1 = start.longitude * math.pi / 180;
+  final bearingRad = bearing * math.pi / 180;
+  
+  final lat2 = math.asin(
+    math.sin(lat1) * math.cos(distanceMeters / earthRadius) +
+    math.cos(lat1) * math.sin(distanceMeters / earthRadius) * math.cos(bearingRad)
+  );
+  
+  final lon2 = lon1 + math.atan2(
+    math.sin(bearingRad) * math.sin(distanceMeters / earthRadius) * math.cos(lat1),
+    math.cos(distanceMeters / earthRadius) - math.sin(lat1) * math.sin(lat2)
+  );
+  
+  return LatLng(lat2 * 180 / math.pi, lon2 * 180 / math.pi);
+}
 
   LatLng _offsetLatLngByMeters(
     LatLng base, {
@@ -4394,8 +4618,8 @@ class _WeatherInfo {
 const List<_WeatherPlace> _priorityBarangayWeatherPlaces = [
   _WeatherPlace(
     name: _manualRainingPlaceName,
-    latitude: 14.639145669663506,
-    longitude: 121.06243166283869,
+    latitude: 14.616617717188785,
+    longitude: 121.12336078811992,
   ),
   _WeatherPlace(name: 'Brgy Mayamot', latitude: 14.6206, longitude: 121.1160),
   _WeatherPlace(name: 'Brgy Cupang', latitude: 14.5897, longitude: 121.1012),

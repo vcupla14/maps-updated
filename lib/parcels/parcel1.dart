@@ -617,7 +617,7 @@ class _ParcelsPageState extends State<ParcelsPage> {
             left: 0,
             right: 0,
             child: Text(
-              "Qouta\n${dailyQuota.toString().padLeft(2, '0')}/70",
+              "Quota\n${dailyQuota.toString().padLeft(2, '0')}/70",
               style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
