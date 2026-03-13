@@ -30,7 +30,10 @@ class VoiceAlertService {
     await _init();
     final message = switch (type) {
       AlertType.overspeeding => 'Overspeeding, slow down',
-      AlertType.pedestrians => 'Pedestrian crossing, slow down',
+      AlertType.pedestrianCrossingZone => 'Slow down. Pedestrian crossings.',
+      AlertType.churchZone => 'Slow down. Church zone.',
+      AlertType.schoolZone => 'Slow down. School zone.',
+      AlertType.hospitalZone => 'Slow down. Hospital zone.',
       AlertType.noOvertakingZone => 'No overtaking zone, do not overtake',
     };
     await _tts.stop();

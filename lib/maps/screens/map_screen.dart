@@ -111,15 +111,15 @@ class _MapScreenState extends State<MapScreen> {
   List<gmaps.Circle> _floodCircles = [];
   bool _floodsLoaded = false;
   bool _floodsLoading = false;
-  List<LatLng> _pedestrianZonePoints = [];
+  List<_PedestrianZonePoint> _pedestrianZonePoints = [];
   bool _pedestrianZonesLoaded = false;
   bool _pedestrianZonesLoading = false;
-  static const double _pedestrianAlertRadiusMeters = 120;
+  static const double _pedestrianAlertRadiusMeters = 20;
   List<LatLng> _noOvertakingZonePoints = [];
   bool _noOvertakingZonesLoaded = false;
   bool _noOvertakingZonesLoading = false;
   static const double _noOvertakingSamplingStepMeters = 35;
-  static const double _noOvertakingAlertRadiusMeters = 90;
+  static const double _noOvertakingAlertRadiusMeters = 20;
   final Set<gmaps.Marker> _weatherMarkers = {};
   final Map<String, gmaps.BitmapDescriptor> _weatherIconCache = {};
   final Map<String, String> _weatherConditionByPlace = {};
@@ -152,10 +152,14 @@ class _MapScreenState extends State<MapScreen> {
   List<RouteStep> _routeSteps = [];
   bool _initialDestinationsApplied = false;
   int _currentStepIndex = 0;
+  int _lastAnnouncedStepIndex = -1;
   double _distanceToNextStepMeters = 0;
-  static const double _destinationArrivalThresholdMeters = 25.0;
+  static const double _turnVoiceAnnouncementDistanceMeters = 15.0;
+  static const double _stepAdvanceDistanceMeters = 10.0;
+  static const double _destinationArrivalThresholdMeters = 10.0;
   double? _currentSpeedMps;
   bool _inPedestrianZone = false;
+  String? _activePedestrianZoneType;
   bool _inNoOvertakingZone = false;
   AlertType? _dismissedAlertType;
   AlertType? _autoCloseScheduledFor;
@@ -646,6 +650,7 @@ class _MapScreenState extends State<MapScreen> {
     }
 
     _currentStepIndex = 0;
+    _lastAnnouncedStepIndex = -1;
     _distanceToNextStepMeters = 0;
 
     // reset trim/progress trackers
@@ -678,7 +683,6 @@ class _MapScreenState extends State<MapScreen> {
     _cameraZoom = _navigationZoom;
     _applyMapStyle(navigation: true);
 
-    _voiceAlertService.announceNavigation(_routeSteps.first.instruction);
     if (_rawLocation != null) {
       setState(() {
         _currentLocation = _displayRawLocation ?? _rawLocation;
@@ -711,6 +715,7 @@ class _MapScreenState extends State<MapScreen> {
     _lastTrimIdx = 0;
     _routeTrimStartIdx = 0;
     _routeProgressIdx = 0;
+    _lastAnnouncedStepIndex = -1;
     _prevStepDistance = null;
     _distanceIncreasingCount = 0;
 
@@ -758,6 +763,7 @@ class _MapScreenState extends State<MapScreen> {
     if (distance > _destinationArrivalThresholdMeters) return;
 
     _arrivalHandlingInProgress = true;
+    unawaited(_voiceAlertService.announceNavigation('Arrived at your destination'));
     final completedParcelId = _extractParcelId(target);
 
     if (mounted) {
@@ -768,6 +774,7 @@ class _MapScreenState extends State<MapScreen> {
         _routeProgressIdx = 0;
         _routeSteps = [];
         _currentStepIndex = 0;
+        _lastAnnouncedStepIndex = -1;
         _distanceToNextStepMeters = 0;
       });
     }
@@ -781,9 +788,6 @@ class _MapScreenState extends State<MapScreen> {
       } finally {
         if (mounted) setState(() => _isComputingRoute = false);
       }
-      if (mounted && _routeSteps.isNotEmpty) {
-        _voiceAlertService.announceNavigation(_routeSteps.first.instruction);
-      }
     } else {
       if (mounted) {
         setState(() {
@@ -793,7 +797,6 @@ class _MapScreenState extends State<MapScreen> {
       }
       _followUser = false;
       _applyMapStyle(navigation: false);
-      _voiceAlertService.stop();
     }
 
     _arrivalModalVisible = true;
@@ -869,10 +872,7 @@ class _MapScreenState extends State<MapScreen> {
                   onPressed: () {
                     Navigator.of(dialogContext).pop();
                     _followUser = true;
-                    if (_routeSteps.isNotEmpty) {
-                      _voiceAlertService
-                          .announceNavigation(_routeSteps.first.instruction);
-                    }
+                    _updateNavigationProgress();
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white,
@@ -1839,6 +1839,7 @@ class _MapScreenState extends State<MapScreen> {
       _routePolyline = selectedResult.polyline;
       _routeSteps = selectedResult.steps;
       _currentStepIndex = 0;
+      _lastAnnouncedStepIndex = -1;
       _distanceToNextStepMeters = 0;
 
       // reset trim/progress trackers whenever route updates
@@ -1995,6 +1996,18 @@ Future<void> _maybeApplyFloodWeatherReroute({bool force = false}) async {
     print('✅ Found better route! Flood hits: $bestFloodHits (was $currentFloodHits)');
     print('🔄 Applying new route...');
 
+      setState(() {
+        _routePolyline = best!.polyline;
+        _routeSteps = best.steps;
+        _currentStepIndex = 0;
+        _lastAnnouncedStepIndex = -1;
+        _distanceToNextStepMeters = 0;
+        _lastTrimIdx = 0;
+        _routeTrimStartIdx = 0;
+        _routeProgressIdx = 0;
+        _prevStepDistance = null;
+        _distanceIncreasingCount = 0;
+      });
     setState(() {
       _routePolyline = best!.polyline;
       _routeSteps = best.steps;
@@ -2461,6 +2474,7 @@ LatLng _offsetByBearing(LatLng start, double bearing, double distanceMeters) {
       _routeProgressIdx = 0;
       _routeSteps = [];
       _currentStepIndex = 0;
+      _lastAnnouncedStepIndex = -1;
       _distanceToNextStepMeters = 0;
       _lastTrimIdx = 0;
       _prevStepDistance = null;
@@ -2479,26 +2493,42 @@ LatLng _offsetByBearing(LatLng start, double bearing, double distanceMeters) {
     if (_pedestrianZonesLoaded || _pedestrianZonesLoading) return;
     _pedestrianZonesLoading = true;
     try {
-      final raw = await rootBundle.loadString(
+      final points = <_PedestrianZonePoint>[];
+      for (final assetPath in const [
         'alert_dataset/rizal_pedestrian_zones_merged.geojson',
-      );
-      final data = jsonDecode(raw) as Map<String, dynamic>;
-      final features = data['features'] as List<dynamic>? ?? const [];
-      final points = <LatLng>[];
+        'alert_dataset/pedestrians_test.geojson',
+      ]) {
+        try {
+          final raw = await rootBundle.loadString(assetPath);
+          final data = jsonDecode(raw) as Map<String, dynamic>;
+          final features = data['features'] as List<dynamic>? ?? const [];
 
-      for (final feature in features) {
-        if (feature is! Map<String, dynamic>) continue;
-        final geometry = feature['geometry'] as Map<String, dynamic>?;
-        if (geometry == null) continue;
-        final type = (geometry['type'] ?? '').toString();
-        final coords = geometry['coordinates'];
+          for (final feature in features) {
+            if (feature is! Map<String, dynamic>) continue;
+            final geometry = feature['geometry'] as Map<String, dynamic>?;
+            final properties = feature['properties'] as Map<String, dynamic>?;
+            if (geometry == null) continue;
+            final type = (geometry['type'] ?? '').toString();
+            final coords = geometry['coordinates'];
+            final zoneType =
+                _normalizePedestrianZoneType(properties?['zone_type']) ??
+                'pedestrians';
 
-        if (type == 'Point' && coords is List && coords.length >= 2) {
-          final lon = (coords[0] as num?)?.toDouble();
-          final lat = (coords[1] as num?)?.toDouble();
-          if (lat != null && lon != null) {
-            points.add(LatLng(lat, lon));
+            if (type == 'Point' && coords is List && coords.length >= 2) {
+              final lon = (coords[0] as num?)?.toDouble();
+              final lat = (coords[1] as num?)?.toDouble();
+              if (lat != null && lon != null) {
+                points.add(
+                  _PedestrianZonePoint(
+                    location: LatLng(lat, lon),
+                    zoneType: zoneType,
+                  ),
+                );
+              }
+            }
           }
+        } catch (_) {
+          // Keep silent; continue loading remaining datasets.
         }
       }
 
@@ -2516,9 +2546,12 @@ LatLng _offsetByBearing(LatLng start, double bearing, double distanceMeters) {
 
   void _updateNavigationZoneFlags() {
     if (!_isNavigating || _currentLocation == null) {
-      if (_inPedestrianZone || _inNoOvertakingZone) {
+      if (_inPedestrianZone ||
+          _activePedestrianZoneType != null ||
+          _inNoOvertakingZone) {
         setState(() {
           _inPedestrianZone = false;
+          _activePedestrianZoneType = null;
           _inNoOvertakingZone = false;
         });
       }
@@ -2526,11 +2559,11 @@ LatLng _offsetByBearing(LatLng start, double bearing, double distanceMeters) {
     }
 
     final current = _currentLocation!;
-    final inPedestrian = _isNearAnyZonePoint(
+    final activePedestrianZoneType = _findActivePedestrianZoneType(
       current,
-      _pedestrianZonePoints,
       _pedestrianAlertRadiusMeters,
     );
+    final inPedestrian = activePedestrianZoneType != null;
     final inNoOvertaking = _isNearAnyZonePoint(
       current,
       _noOvertakingZonePoints,
@@ -2538,11 +2571,59 @@ LatLng _offsetByBearing(LatLng start, double bearing, double distanceMeters) {
     );
 
     if (inPedestrian != _inPedestrianZone ||
+        activePedestrianZoneType != _activePedestrianZoneType ||
         inNoOvertaking != _inNoOvertakingZone) {
       setState(() {
         _inPedestrianZone = inPedestrian;
+        _activePedestrianZoneType = activePedestrianZoneType;
         _inNoOvertakingZone = inNoOvertaking;
       });
+    }
+  }
+
+  String? _findActivePedestrianZoneType(
+    LatLng current,
+    double thresholdMeters,
+  ) {
+    if (_pedestrianZonePoints.isEmpty) return null;
+
+    final latPad = thresholdMeters / 111320.0;
+    final lonPad =
+        thresholdMeters / (111320.0 * math.cos(current.latitude * math.pi / 180));
+    double? bestDistance;
+    String? bestZoneType;
+
+    for (final zone in _pedestrianZonePoints) {
+      final point = zone.location;
+      if ((point.latitude - current.latitude).abs() > latPad) continue;
+      if ((point.longitude - current.longitude).abs() > lonPad) continue;
+
+      final d = Geolocator.distanceBetween(
+        current.latitude,
+        current.longitude,
+        point.latitude,
+        point.longitude,
+      );
+      if (d > thresholdMeters) continue;
+      if (bestDistance == null || d < bestDistance) {
+        bestDistance = d;
+        bestZoneType = zone.zoneType;
+      }
+    }
+
+    return bestZoneType;
+  }
+
+  String? _normalizePedestrianZoneType(Object? raw) {
+    final value = raw?.toString().trim().toLowerCase();
+    switch (value) {
+      case 'pedestrians':
+      case 'church':
+      case 'school':
+      case 'hospital':
+        return value;
+      default:
+        return null;
     }
   }
 
@@ -2576,54 +2657,61 @@ LatLng _offsetByBearing(LatLng start, double bearing, double distanceMeters) {
     if (_noOvertakingZonesLoaded || _noOvertakingZonesLoading) return;
     _noOvertakingZonesLoading = true;
     try {
-      final raw = await rootBundle.loadString(
-        'alert_dataset/rizal_no_overtaking_zone.geojson',
-      );
-      final data = jsonDecode(raw) as Map<String, dynamic>;
-      final features = data['features'] as List<dynamic>? ?? const [];
       final points = <LatLng>[];
+      for (final assetPath in const [
+        'alert_dataset/rizal_no_overtaking_zone.geojson',
+        'alert_dataset/no_overtaking_zone_test.geojson',
+      ]) {
+        try {
+          final raw = await rootBundle.loadString(assetPath);
+          final data = jsonDecode(raw) as Map<String, dynamic>;
+          final features = data['features'] as List<dynamic>? ?? const [];
 
-      for (final feature in features) {
-        if (feature is! Map<String, dynamic>) continue;
-        final geometry = feature['geometry'] as Map<String, dynamic>?;
-        if (geometry == null) continue;
+          for (final feature in features) {
+            if (feature is! Map<String, dynamic>) continue;
+            final geometry = feature['geometry'] as Map<String, dynamic>?;
+            if (geometry == null) continue;
 
-        final type = (geometry['type'] ?? '').toString();
-        final coords = geometry['coordinates'];
+            final type = (geometry['type'] ?? '').toString();
+            final coords = geometry['coordinates'];
 
-        if (type == 'Point' && coords is List && coords.length >= 2) {
-          final lon = (coords[0] as num?)?.toDouble();
-          final lat = (coords[1] as num?)?.toDouble();
-          if (lat != null && lon != null) {
-            points.add(LatLng(lat, lon));
-          }
-          continue;
-        }
-
-        if (type == 'LineString' && coords is List && coords.length >= 2) {
-          LatLng? lastKept;
-          for (final item in coords) {
-            if (item is! List || item.length < 2) continue;
-            final lon = (item[0] as num?)?.toDouble();
-            final lat = (item[1] as num?)?.toDouble();
-            if (lat == null || lon == null) continue;
-            final current = LatLng(lat, lon);
-            if (lastKept == null) {
-              points.add(current);
-              lastKept = current;
+            if (type == 'Point' && coords is List && coords.length >= 2) {
+              final lon = (coords[0] as num?)?.toDouble();
+              final lat = (coords[1] as num?)?.toDouble();
+              if (lat != null && lon != null) {
+                points.add(LatLng(lat, lon));
+              }
               continue;
             }
-            final dist = Geolocator.distanceBetween(
-              lastKept.latitude,
-              lastKept.longitude,
-              current.latitude,
-              current.longitude,
-            );
-            if (dist >= _noOvertakingSamplingStepMeters) {
-              points.add(current);
-              lastKept = current;
+
+            if (type == 'LineString' && coords is List && coords.length >= 2) {
+              LatLng? lastKept;
+              for (final item in coords) {
+                if (item is! List || item.length < 2) continue;
+                final lon = (item[0] as num?)?.toDouble();
+                final lat = (item[1] as num?)?.toDouble();
+                if (lat == null || lon == null) continue;
+                final current = LatLng(lat, lon);
+                if (lastKept == null) {
+                  points.add(current);
+                  lastKept = current;
+                  continue;
+                }
+                final dist = Geolocator.distanceBetween(
+                  lastKept.latitude,
+                  lastKept.longitude,
+                  current.latitude,
+                  current.longitude,
+                );
+                if (dist >= _noOvertakingSamplingStepMeters) {
+                  points.add(current);
+                  lastKept = current;
+                }
+              }
             }
           }
+        } catch (_) {
+          // Keep silent; continue loading remaining datasets.
         }
       }
 
@@ -2651,6 +2739,7 @@ LatLng _offsetByBearing(LatLng start, double bearing, double distanceMeters) {
         _routeProgressIdx = 0;
         _routeSteps = [];
         _currentStepIndex = 0;
+        _lastAnnouncedStepIndex = -1;
         _distanceToNextStepMeters = 0;
         _dismissedAlertType = null;
         _lastSpokenAlertType = null;
@@ -2707,6 +2796,14 @@ LatLng _offsetByBearing(LatLng start, double bearing, double distanceMeters) {
       setState(() => _distanceToNextStepMeters = distance);
     }
 
+    final shouldAnnounceStep = !_isArrivalStep(step) &&
+        distance <= _turnVoiceAnnouncementDistanceMeters &&
+        _lastAnnouncedStepIndex != _currentStepIndex;
+    if (shouldAnnounceStep) {
+      _lastAnnouncedStepIndex = _currentStepIndex;
+      unawaited(_voiceAlertService.announceNavigation(step.instruction));
+    }
+
     // "passed step" detection:
     // If the distance keeps increasing, assume step already passed (common in fast movement / GPS jitter)
     if (_prevStepDistance != null && distance > _prevStepDistance! + 5) {
@@ -2716,18 +2813,19 @@ LatLng _offsetByBearing(LatLng start, double bearing, double distanceMeters) {
     }
     _prevStepDistance = distance;
 
-    final reached = distance <= 30;
+    final reached = distance <= _stepAdvanceDistanceMeters;
     final likelyPassed = _distanceIncreasingCount >= 3;
 
     if ((reached || likelyPassed) && _currentStepIndex < _routeSteps.length - 1) {
       _currentStepIndex += 1;
       _distanceIncreasingCount = 0;
       _prevStepDistance = null;
-
-      _voiceAlertService.announceNavigation(
-        _routeSteps[_currentStepIndex].instruction,
-      );
     }
+  }
+
+  bool _isArrivalStep(RouteStep step) {
+    final text = step.instruction.toLowerCase();
+    return text.contains('arrive') || text.contains('destination');
   }
 
   bool _isGoodGpsSample(Position sample, Position? last) {
@@ -3298,6 +3396,7 @@ LatLng _offsetByBearing(LatLng start, double bearing, double distanceMeters) {
         isNavigating: _isNavigating,
         speedKmh: speedKmh,
         inPedestrianZone: _inPedestrianZone,
+        pedestrianZoneType: _activePedestrianZoneType,
         inNoOvertakingZone: _inNoOvertakingZone,
       ),
     );
@@ -3326,7 +3425,7 @@ LatLng _offsetByBearing(LatLng start, double bearing, double distanceMeters) {
   }
 
   void _scheduleAlertAutoClose(AlertType type) {
-    if (type == AlertType.overspeeding) {
+    if (_isPersistentNavigationAlert(type)) {
       _cancelAlertAutoClose();
       return;
     }
@@ -3345,6 +3444,18 @@ LatLng _offsetByBearing(LatLng start, double bearing, double distanceMeters) {
       }
       _autoCloseScheduledFor = null;
     });
+  }
+
+  bool _isPersistentNavigationAlert(AlertType type) {
+    switch (type) {
+      case AlertType.overspeeding:
+      case AlertType.pedestrianCrossingZone:
+      case AlertType.churchZone:
+      case AlertType.schoolZone:
+      case AlertType.hospitalZone:
+      case AlertType.noOvertakingZone:
+        return true;
+    }
   }
 
   void _cancelAlertAutoClose() {
@@ -4259,9 +4370,7 @@ LatLng _offsetByBearing(LatLng start, double bearing, double distanceMeters) {
               bottom: 80,
               child: AlertCard(
                 type: activeAlertType!,
-                onClose: activeAlertType == AlertType.overspeeding
-                    ? null
-                    : () => _dismissAlert(activeAlertType!),
+                onClose: null,
               ),
             ),
           Positioned(
@@ -4557,6 +4666,16 @@ LatLng _offsetByBearing(LatLng start, double bearing, double distanceMeters) {
     );
   }
 
+}
+
+class _PedestrianZonePoint {
+  final LatLng location;
+  final String zoneType;
+
+  const _PedestrianZonePoint({
+    required this.location,
+    required this.zoneType,
+  });
 }
 
 class _RouteProjection {

@@ -1,0 +1,88 @@
+{
+  "type": "FeatureCollection",
+  "name": "pedestrians_test",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "pedestrian_crossing_test_1",
+      "properties": {
+        "name": "Pedestrian Crossing Test 1",
+        "zone_type": "pedestrians",
+        "highway": "crossing",
+        "crossing": "uncontrolled"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.0613852875916,
+          14.639033386359865
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "pedestrian_crossing_test_2",
+      "properties": {
+        "name": "Pedestrian Crossing Test 2",
+        "zone_type": "pedestrians",
+        "highway": "crossing",
+        "crossing": "uncontrolled"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.06153494200399,
+          14.636959103749113
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "church_test_1",
+      "properties": {
+        "name": "St. Sample Church",
+        "zone_type": "church",
+        "amenity": "place_of_worship"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.06232977321635,
+          14.640333598881615
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "hospital_test_1",
+      "properties": {
+        "name": "Sample Community Hospital",
+        "zone_type": "hospital",
+        "amenity": "hospital"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.06240848035168,
+          14.639548954126074
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "school_test_1",
+      "properties": {
+        "name": "Rizal Sample School",
+        "zone_type": "school",
+        "amenity": "school"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.06193069478341,
+          14.639126297244472
+        ]
+      }
+    }
+  ]
+}

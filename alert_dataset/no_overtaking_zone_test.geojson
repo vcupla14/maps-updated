@@ -1,0 +1,33 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "zone_type": "no_overtaking_zone",
+        "name": "Rizal No Overtaking Segment A"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.0613675507719,
+          14.639095729165355
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "zone_type": "no_overtaking_zone",
+        "name": "Rizal No Overtaking Segment B"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.06144847501034,
+          14.637948819813435
+        ]
+      }
+    }
+  ]
+}
