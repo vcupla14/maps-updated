@@ -113,12 +113,12 @@ class _MapScreenState extends State<MapScreen> {
   List<_PedestrianZonePoint> _pedestrianZonePoints = [];
   bool _pedestrianZonesLoaded = false;
   bool _pedestrianZonesLoading = false;
-  static const double _pedestrianAlertRadiusMeters = 120;
+  static const double _pedestrianAlertRadiusMeters = 20;
   List<LatLng> _noOvertakingZonePoints = [];
   bool _noOvertakingZonesLoaded = false;
   bool _noOvertakingZonesLoading = false;
   static const double _noOvertakingSamplingStepMeters = 35;
-  static const double _noOvertakingAlertRadiusMeters = 90;
+  static const double _noOvertakingAlertRadiusMeters = 20;
   final Set<gmaps.Marker> _weatherMarkers = {};
   final Map<String, gmaps.BitmapDescriptor> _weatherIconCache = {};
   final Map<String, String> _weatherConditionByPlace = {};
@@ -149,8 +149,11 @@ class _MapScreenState extends State<MapScreen> {
   List<RouteStep> _routeSteps = [];
   bool _initialDestinationsApplied = false;
   int _currentStepIndex = 0;
+  int _lastAnnouncedStepIndex = -1;
   double _distanceToNextStepMeters = 0;
-  static const double _destinationArrivalThresholdMeters = 25.0;
+  static const double _turnVoiceAnnouncementDistanceMeters = 15.0;
+  static const double _stepAdvanceDistanceMeters = 10.0;
+  static const double _destinationArrivalThresholdMeters = 10.0;
   double? _currentSpeedMps;
   bool _inPedestrianZone = false;
   String? _activePedestrianZoneType;
@@ -644,6 +647,7 @@ class _MapScreenState extends State<MapScreen> {
     }
 
     _currentStepIndex = 0;
+    _lastAnnouncedStepIndex = -1;
     _distanceToNextStepMeters = 0;
 
     // reset trim/progress trackers
@@ -676,7 +680,6 @@ class _MapScreenState extends State<MapScreen> {
     _cameraZoom = _navigationZoom;
     _applyMapStyle(navigation: true);
 
-    _voiceAlertService.announceNavigation(_routeSteps.first.instruction);
     if (_rawLocation != null) {
       setState(() {
         _currentLocation = _displayRawLocation ?? _rawLocation;
@@ -709,6 +712,7 @@ class _MapScreenState extends State<MapScreen> {
     _lastTrimIdx = 0;
     _routeTrimStartIdx = 0;
     _routeProgressIdx = 0;
+    _lastAnnouncedStepIndex = -1;
     _prevStepDistance = null;
     _distanceIncreasingCount = 0;
 
@@ -756,6 +760,7 @@ class _MapScreenState extends State<MapScreen> {
     if (distance > _destinationArrivalThresholdMeters) return;
 
     _arrivalHandlingInProgress = true;
+    unawaited(_voiceAlertService.announceNavigation('Arrived at your destination'));
     final completedParcelId = _extractParcelId(target);
 
     if (mounted) {
@@ -766,6 +771,7 @@ class _MapScreenState extends State<MapScreen> {
         _routeProgressIdx = 0;
         _routeSteps = [];
         _currentStepIndex = 0;
+        _lastAnnouncedStepIndex = -1;
         _distanceToNextStepMeters = 0;
       });
     }
@@ -779,9 +785,6 @@ class _MapScreenState extends State<MapScreen> {
       } finally {
         if (mounted) setState(() => _isComputingRoute = false);
       }
-      if (mounted && _routeSteps.isNotEmpty) {
-        _voiceAlertService.announceNavigation(_routeSteps.first.instruction);
-      }
     } else {
       if (mounted) {
         setState(() {
@@ -791,7 +794,6 @@ class _MapScreenState extends State<MapScreen> {
       }
       _followUser = false;
       _applyMapStyle(navigation: false);
-      _voiceAlertService.stop();
     }
 
     _arrivalModalVisible = true;
@@ -867,10 +869,7 @@ class _MapScreenState extends State<MapScreen> {
                   onPressed: () {
                     Navigator.of(dialogContext).pop();
                     _followUser = true;
-                    if (_routeSteps.isNotEmpty) {
-                      _voiceAlertService
-                          .announceNavigation(_routeSteps.first.instruction);
-                    }
+                    _updateNavigationProgress();
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white,
@@ -1837,6 +1836,7 @@ class _MapScreenState extends State<MapScreen> {
       _routePolyline = selectedResult.polyline;
       _routeSteps = selectedResult.steps;
       _currentStepIndex = 0;
+      _lastAnnouncedStepIndex = -1;
       _distanceToNextStepMeters = 0;
 
       // reset trim/progress trackers whenever route updates
@@ -1916,6 +1916,7 @@ class _MapScreenState extends State<MapScreen> {
         _routePolyline = best!.polyline;
         _routeSteps = best.steps;
         _currentStepIndex = 0;
+        _lastAnnouncedStepIndex = -1;
         _distanceToNextStepMeters = 0;
         _lastTrimIdx = 0;
         _routeTrimStartIdx = 0;
@@ -2238,6 +2239,7 @@ class _MapScreenState extends State<MapScreen> {
       _routeProgressIdx = 0;
       _routeSteps = [];
       _currentStepIndex = 0;
+      _lastAnnouncedStepIndex = -1;
       _distanceToNextStepMeters = 0;
       _lastTrimIdx = 0;
       _prevStepDistance = null;
@@ -2502,6 +2504,7 @@ class _MapScreenState extends State<MapScreen> {
         _routeProgressIdx = 0;
         _routeSteps = [];
         _currentStepIndex = 0;
+        _lastAnnouncedStepIndex = -1;
         _distanceToNextStepMeters = 0;
         _dismissedAlertType = null;
         _lastSpokenAlertType = null;
@@ -2558,6 +2561,14 @@ class _MapScreenState extends State<MapScreen> {
       setState(() => _distanceToNextStepMeters = distance);
     }
 
+    final shouldAnnounceStep = !_isArrivalStep(step) &&
+        distance <= _turnVoiceAnnouncementDistanceMeters &&
+        _lastAnnouncedStepIndex != _currentStepIndex;
+    if (shouldAnnounceStep) {
+      _lastAnnouncedStepIndex = _currentStepIndex;
+      unawaited(_voiceAlertService.announceNavigation(step.instruction));
+    }
+
     // "passed step" detection:
     // If the distance keeps increasing, assume step already passed (common in fast movement / GPS jitter)
     if (_prevStepDistance != null && distance > _prevStepDistance! + 5) {
@@ -2567,18 +2578,19 @@ class _MapScreenState extends State<MapScreen> {
     }
     _prevStepDistance = distance;
 
-    final reached = distance <= 30;
+    final reached = distance <= _stepAdvanceDistanceMeters;
     final likelyPassed = _distanceIncreasingCount >= 3;
 
     if ((reached || likelyPassed) && _currentStepIndex < _routeSteps.length - 1) {
       _currentStepIndex += 1;
       _distanceIncreasingCount = 0;
       _prevStepDistance = null;
-
-      _voiceAlertService.announceNavigation(
-        _routeSteps[_currentStepIndex].instruction,
-      );
     }
+  }
+
+  bool _isArrivalStep(RouteStep step) {
+    final text = step.instruction.toLowerCase();
+    return text.contains('arrive') || text.contains('destination');
   }
 
   bool _isGoodGpsSample(Position sample, Position? last) {
@@ -3178,7 +3190,7 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _scheduleAlertAutoClose(AlertType type) {
-    if (type == AlertType.overspeeding) {
+    if (_isPersistentNavigationAlert(type)) {
       _cancelAlertAutoClose();
       return;
     }
@@ -3197,6 +3209,18 @@ class _MapScreenState extends State<MapScreen> {
       }
       _autoCloseScheduledFor = null;
     });
+  }
+
+  bool _isPersistentNavigationAlert(AlertType type) {
+    switch (type) {
+      case AlertType.overspeeding:
+      case AlertType.pedestrianCrossingZone:
+      case AlertType.churchZone:
+      case AlertType.schoolZone:
+      case AlertType.hospitalZone:
+      case AlertType.noOvertakingZone:
+        return true;
+    }
   }
 
   void _cancelAlertAutoClose() {
@@ -4111,9 +4135,7 @@ class _MapScreenState extends State<MapScreen> {
               bottom: 80,
               child: AlertCard(
                 type: activeAlertType!,
-                onClose: activeAlertType == AlertType.overspeeding
-                    ? null
-                    : () => _dismissAlert(activeAlertType!),
+                onClose: null,
               ),
             ),
           Positioned(

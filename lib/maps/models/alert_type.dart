@@ -54,9 +54,9 @@ extension AlertTypeX on AlertType {
       case AlertType.churchZone:
       case AlertType.schoolZone:
       case AlertType.hospitalZone:
-        return const ui.Color.fromARGB(255, 255, 238, 83);
+        return const ui.Color.fromARGB(255, 193, 116, 0);
       case AlertType.noOvertakingZone:
-        return const ui.Color.fromARGB(255, 255, 164, 28);
+        return const ui.Color.fromARGB(255, 193, 116, 0);
     }
   }
 
