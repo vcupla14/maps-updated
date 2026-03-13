@@ -4,12 +4,14 @@ class NavigationAlertContext {
   final bool isNavigating;
   final int? speedKmh;
   final bool inPedestrianZone;
+  final String? pedestrianZoneType;
   final bool inNoOvertakingZone;
 
   const NavigationAlertContext({
     required this.isNavigating,
     required this.speedKmh,
     required this.inPedestrianZone,
+    required this.pedestrianZoneType,
     required this.inNoOvertakingZone,
   });
 }
@@ -24,7 +26,20 @@ class NavigationTypeLogic {
       return AlertType.overspeeding;
     }
     if (context.inPedestrianZone) {
-      return AlertType.pedestrians;
+      final zoneType = (context.pedestrianZoneType ?? 'pedestrians')
+          .trim()
+          .toLowerCase();
+      switch (zoneType) {
+        case 'church':
+          return AlertType.churchZone;
+        case 'school':
+          return AlertType.schoolZone;
+        case 'hospital':
+          return AlertType.hospitalZone;
+        case 'pedestrians':
+        default:
+          return AlertType.pedestrianCrossingZone;
+      }
     }
     if (context.inNoOvertakingZone) {
       return AlertType.noOvertakingZone;

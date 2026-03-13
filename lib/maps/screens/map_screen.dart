@@ -110,7 +110,7 @@ class _MapScreenState extends State<MapScreen> {
   List<gmaps.Circle> _floodCircles = [];
   bool _floodsLoaded = false;
   bool _floodsLoading = false;
-  List<LatLng> _pedestrianZonePoints = [];
+  List<_PedestrianZonePoint> _pedestrianZonePoints = [];
   bool _pedestrianZonesLoaded = false;
   bool _pedestrianZonesLoading = false;
   static const double _pedestrianAlertRadiusMeters = 120;
@@ -153,6 +153,7 @@ class _MapScreenState extends State<MapScreen> {
   static const double _destinationArrivalThresholdMeters = 25.0;
   double? _currentSpeedMps;
   bool _inPedestrianZone = false;
+  String? _activePedestrianZoneType;
   bool _inNoOvertakingZone = false;
   AlertType? _dismissedAlertType;
   AlertType? _autoCloseScheduledFor;
@@ -2255,26 +2256,42 @@ class _MapScreenState extends State<MapScreen> {
     if (_pedestrianZonesLoaded || _pedestrianZonesLoading) return;
     _pedestrianZonesLoading = true;
     try {
-      final raw = await rootBundle.loadString(
+      final points = <_PedestrianZonePoint>[];
+      for (final assetPath in const [
         'alert_dataset/rizal_pedestrian_zones_merged.geojson',
-      );
-      final data = jsonDecode(raw) as Map<String, dynamic>;
-      final features = data['features'] as List<dynamic>? ?? const [];
-      final points = <LatLng>[];
+        'alert_dataset/pedestrians_test.geojson',
+      ]) {
+        try {
+          final raw = await rootBundle.loadString(assetPath);
+          final data = jsonDecode(raw) as Map<String, dynamic>;
+          final features = data['features'] as List<dynamic>? ?? const [];
 
-      for (final feature in features) {
-        if (feature is! Map<String, dynamic>) continue;
-        final geometry = feature['geometry'] as Map<String, dynamic>?;
-        if (geometry == null) continue;
-        final type = (geometry['type'] ?? '').toString();
-        final coords = geometry['coordinates'];
+          for (final feature in features) {
+            if (feature is! Map<String, dynamic>) continue;
+            final geometry = feature['geometry'] as Map<String, dynamic>?;
+            final properties = feature['properties'] as Map<String, dynamic>?;
+            if (geometry == null) continue;
+            final type = (geometry['type'] ?? '').toString();
+            final coords = geometry['coordinates'];
+            final zoneType =
+                _normalizePedestrianZoneType(properties?['zone_type']) ??
+                'pedestrians';
 
-        if (type == 'Point' && coords is List && coords.length >= 2) {
-          final lon = (coords[0] as num?)?.toDouble();
-          final lat = (coords[1] as num?)?.toDouble();
-          if (lat != null && lon != null) {
-            points.add(LatLng(lat, lon));
+            if (type == 'Point' && coords is List && coords.length >= 2) {
+              final lon = (coords[0] as num?)?.toDouble();
+              final lat = (coords[1] as num?)?.toDouble();
+              if (lat != null && lon != null) {
+                points.add(
+                  _PedestrianZonePoint(
+                    location: LatLng(lat, lon),
+                    zoneType: zoneType,
+                  ),
+                );
+              }
+            }
           }
+        } catch (_) {
+          // Keep silent; continue loading remaining datasets.
         }
       }
 
@@ -2292,9 +2309,12 @@ class _MapScreenState extends State<MapScreen> {
 
   void _updateNavigationZoneFlags() {
     if (!_isNavigating || _currentLocation == null) {
-      if (_inPedestrianZone || _inNoOvertakingZone) {
+      if (_inPedestrianZone ||
+          _activePedestrianZoneType != null ||
+          _inNoOvertakingZone) {
         setState(() {
           _inPedestrianZone = false;
+          _activePedestrianZoneType = null;
           _inNoOvertakingZone = false;
         });
       }
@@ -2302,11 +2322,11 @@ class _MapScreenState extends State<MapScreen> {
     }
 
     final current = _currentLocation!;
-    final inPedestrian = _isNearAnyZonePoint(
+    final activePedestrianZoneType = _findActivePedestrianZoneType(
       current,
-      _pedestrianZonePoints,
       _pedestrianAlertRadiusMeters,
     );
+    final inPedestrian = activePedestrianZoneType != null;
     final inNoOvertaking = _isNearAnyZonePoint(
       current,
       _noOvertakingZonePoints,
@@ -2314,11 +2334,59 @@ class _MapScreenState extends State<MapScreen> {
     );
 
     if (inPedestrian != _inPedestrianZone ||
+        activePedestrianZoneType != _activePedestrianZoneType ||
         inNoOvertaking != _inNoOvertakingZone) {
       setState(() {
         _inPedestrianZone = inPedestrian;
+        _activePedestrianZoneType = activePedestrianZoneType;
         _inNoOvertakingZone = inNoOvertaking;
       });
+    }
+  }
+
+  String? _findActivePedestrianZoneType(
+    LatLng current,
+    double thresholdMeters,
+  ) {
+    if (_pedestrianZonePoints.isEmpty) return null;
+
+    final latPad = thresholdMeters / 111320.0;
+    final lonPad =
+        thresholdMeters / (111320.0 * math.cos(current.latitude * math.pi / 180));
+    double? bestDistance;
+    String? bestZoneType;
+
+    for (final zone in _pedestrianZonePoints) {
+      final point = zone.location;
+      if ((point.latitude - current.latitude).abs() > latPad) continue;
+      if ((point.longitude - current.longitude).abs() > lonPad) continue;
+
+      final d = Geolocator.distanceBetween(
+        current.latitude,
+        current.longitude,
+        point.latitude,
+        point.longitude,
+      );
+      if (d > thresholdMeters) continue;
+      if (bestDistance == null || d < bestDistance) {
+        bestDistance = d;
+        bestZoneType = zone.zoneType;
+      }
+    }
+
+    return bestZoneType;
+  }
+
+  String? _normalizePedestrianZoneType(Object? raw) {
+    final value = raw?.toString().trim().toLowerCase();
+    switch (value) {
+      case 'pedestrians':
+      case 'church':
+      case 'school':
+      case 'hospital':
+        return value;
+      default:
+        return null;
     }
   }
 
@@ -2352,54 +2420,61 @@ class _MapScreenState extends State<MapScreen> {
     if (_noOvertakingZonesLoaded || _noOvertakingZonesLoading) return;
     _noOvertakingZonesLoading = true;
     try {
-      final raw = await rootBundle.loadString(
-        'alert_dataset/rizal_no_overtaking_zone.geojson',
-      );
-      final data = jsonDecode(raw) as Map<String, dynamic>;
-      final features = data['features'] as List<dynamic>? ?? const [];
       final points = <LatLng>[];
+      for (final assetPath in const [
+        'alert_dataset/rizal_no_overtaking_zone.geojson',
+        'alert_dataset/no_overtaking_zone_test.geojson',
+      ]) {
+        try {
+          final raw = await rootBundle.loadString(assetPath);
+          final data = jsonDecode(raw) as Map<String, dynamic>;
+          final features = data['features'] as List<dynamic>? ?? const [];
 
-      for (final feature in features) {
-        if (feature is! Map<String, dynamic>) continue;
-        final geometry = feature['geometry'] as Map<String, dynamic>?;
-        if (geometry == null) continue;
+          for (final feature in features) {
+            if (feature is! Map<String, dynamic>) continue;
+            final geometry = feature['geometry'] as Map<String, dynamic>?;
+            if (geometry == null) continue;
 
-        final type = (geometry['type'] ?? '').toString();
-        final coords = geometry['coordinates'];
+            final type = (geometry['type'] ?? '').toString();
+            final coords = geometry['coordinates'];
 
-        if (type == 'Point' && coords is List && coords.length >= 2) {
-          final lon = (coords[0] as num?)?.toDouble();
-          final lat = (coords[1] as num?)?.toDouble();
-          if (lat != null && lon != null) {
-            points.add(LatLng(lat, lon));
-          }
-          continue;
-        }
-
-        if (type == 'LineString' && coords is List && coords.length >= 2) {
-          LatLng? lastKept;
-          for (final item in coords) {
-            if (item is! List || item.length < 2) continue;
-            final lon = (item[0] as num?)?.toDouble();
-            final lat = (item[1] as num?)?.toDouble();
-            if (lat == null || lon == null) continue;
-            final current = LatLng(lat, lon);
-            if (lastKept == null) {
-              points.add(current);
-              lastKept = current;
+            if (type == 'Point' && coords is List && coords.length >= 2) {
+              final lon = (coords[0] as num?)?.toDouble();
+              final lat = (coords[1] as num?)?.toDouble();
+              if (lat != null && lon != null) {
+                points.add(LatLng(lat, lon));
+              }
               continue;
             }
-            final dist = Geolocator.distanceBetween(
-              lastKept.latitude,
-              lastKept.longitude,
-              current.latitude,
-              current.longitude,
-            );
-            if (dist >= _noOvertakingSamplingStepMeters) {
-              points.add(current);
-              lastKept = current;
+
+            if (type == 'LineString' && coords is List && coords.length >= 2) {
+              LatLng? lastKept;
+              for (final item in coords) {
+                if (item is! List || item.length < 2) continue;
+                final lon = (item[0] as num?)?.toDouble();
+                final lat = (item[1] as num?)?.toDouble();
+                if (lat == null || lon == null) continue;
+                final current = LatLng(lat, lon);
+                if (lastKept == null) {
+                  points.add(current);
+                  lastKept = current;
+                  continue;
+                }
+                final dist = Geolocator.distanceBetween(
+                  lastKept.latitude,
+                  lastKept.longitude,
+                  current.latitude,
+                  current.longitude,
+                );
+                if (dist >= _noOvertakingSamplingStepMeters) {
+                  points.add(current);
+                  lastKept = current;
+                }
+              }
             }
           }
+        } catch (_) {
+          // Keep silent; continue loading remaining datasets.
         }
       }
 
@@ -3074,6 +3149,7 @@ class _MapScreenState extends State<MapScreen> {
         isNavigating: _isNavigating,
         speedKmh: speedKmh,
         inPedestrianZone: _inPedestrianZone,
+        pedestrianZoneType: _activePedestrianZoneType,
         inNoOvertakingZone: _inNoOvertakingZone,
       ),
     );
@@ -4333,6 +4409,16 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+}
+
+class _PedestrianZonePoint {
+  final LatLng location;
+  final String zoneType;
+
+  const _PedestrianZonePoint({
+    required this.location,
+    required this.zoneType,
+  });
 }
 
 class _RouteProjection {

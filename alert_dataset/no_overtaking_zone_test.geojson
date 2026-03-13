@@ -1,0 +1,22 @@
+{
+  "type": "FeatureCollection",
+  "name": "no_overtaking_zone_test",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "no_overtaking_test_1",
+      "properties": {
+        "name": "No Overtaking Zone Test 1",
+        "zone_type": "no_overtaking_zone",
+        "description": "Test point for no overtaking zone"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.0613675507719,
+          14.639095729165355
+        ]
+      }
+    }
+  ]
+}

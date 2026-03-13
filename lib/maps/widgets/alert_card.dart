@@ -17,6 +17,7 @@ class AlertCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = type.color;
+    final subtitle = type.subtitle;
 
     return Container(
       width: double.infinity,
@@ -45,21 +46,25 @@ class AlertCard extends StatelessWidget {
               children: [
                 Text(
                   type.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: accent,
                     fontWeight: FontWeight.w700,
                     fontSize: 16,
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  type.subtitle,
-                  style: TextStyle(
-                    color: accent,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
+                if (subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: accent,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
