@@ -74,6 +74,8 @@ flutter:
     - alert_dataset/pedestrians_test.geojson
     - alert_dataset/rizal_no_overtaking_zone.geojson
     - alert_dataset/no_overtaking_zone_test.geojson
+    - alert_dataset/no_overtaking_zone_test_new.geojson
+    - alert_dataset/pedestrian_crossing_test_new.geojson
 
   fonts:
     - family: Judson

@@ -114,12 +114,12 @@ class _MapScreenState extends State<MapScreen> {
   List<_PedestrianZonePoint> _pedestrianZonePoints = [];
   bool _pedestrianZonesLoaded = false;
   bool _pedestrianZonesLoading = false;
-  static const double _pedestrianAlertRadiusMeters = 20;
+  static const double _pedestrianAlertRadiusMeters = 25;
   List<LatLng> _noOvertakingZonePoints = [];
   bool _noOvertakingZonesLoaded = false;
   bool _noOvertakingZonesLoading = false;
   static const double _noOvertakingSamplingStepMeters = 35;
-  static const double _noOvertakingAlertRadiusMeters = 20;
+  static const double _noOvertakingAlertRadiusMeters = 25;
   final Set<gmaps.Marker> _weatherMarkers = {};
   final Map<String, gmaps.BitmapDescriptor> _weatherIconCache = {};
   final Map<String, String> _weatherConditionByPlace = {};
@@ -130,6 +130,7 @@ class _MapScreenState extends State<MapScreen> {
   bool _rerouteInProgress = false;
   bool _showRouteUpdateBanner = false;
   String _routeUpdateBannerMessage = '';
+  bool _isFloodRerouteCalculating = false;
 
   static const int _routeSampleStride = 6;
   static const double _floodHitDistanceMeters = 40;
@@ -1890,35 +1891,41 @@ Future<void> _maybeApplyFloodWeatherReroute({bool force = false}) async {
   }
 
   print('✅ Basic checks passed, loading flood/weather data...');
-  await _ensureFloodWeatherDataForAvoidance(force: force);
   
-  if (!mounted || _floodPoints.isEmpty) {
-    print('❌ Not mounted or no flood points loaded');
-    return;
+  // 👇 SHOW LOADING
+  if (mounted) {
+    setState(() => _isFloodRerouteCalculating = true);
   }
-  
-  print('✅ Flood points loaded: ${_floodPoints.length} points');
-
-  final currentFloodHits = _countFloodHits(_routePolyline);
-  print('📊 Current route flood hits: $currentFloodHits');
-  
-  if (currentFloodHits <= 0) {
-    print('✅ No flood hits on current route - no reroute needed');
-    return;
-  }
-
-  final rainingOnRoute = _isRainingNearRoute(_routePolyline);
-  print('🌧️ Is raining near route: $rainingOnRoute');
-  
-  if (!rainingOnRoute) {
-    print('❌ Not raining near route - no reroute needed');
-    return;
-  }
-
-  print('🔄 Starting reroute process...');
-  _rerouteInProgress = true;
   
   try {
+    await _ensureFloodWeatherDataForAvoidance(force: force);
+    
+    if (!mounted || _floodPoints.isEmpty) {
+      print('❌ Not mounted or no flood points loaded');
+      return;
+    }
+    
+    print('✅ Flood points loaded: ${_floodPoints.length} points');
+
+    final currentFloodHits = _countFloodHits(_routePolyline);
+    print('📊 Current route flood hits: $currentFloodHits');
+    
+    if (currentFloodHits <= 0) {
+      print('✅ No flood hits on current route - no reroute needed');
+      return;
+    }
+
+    final rainingOnRoute = _isRainingNearRoute(_routePolyline);
+    print('🌧️ Is raining near route: $rainingOnRoute');
+    
+    if (!rainingOnRoute) {
+      print('❌ Not raining near route - no reroute needed');
+      return;
+    }
+
+    print('🔄 Starting reroute process...');
+    _rerouteInProgress = true;
+    
     print('📍 Current route has $currentFloodHits flood hits');
     print('⏱️ Waiting 0.5 seconds...');
     
@@ -1996,18 +2003,6 @@ Future<void> _maybeApplyFloodWeatherReroute({bool force = false}) async {
     print('✅ Found better route! Flood hits: $bestFloodHits (was $currentFloodHits)');
     print('🔄 Applying new route...');
 
-      setState(() {
-        _routePolyline = best!.polyline;
-        _routeSteps = best.steps;
-        _currentStepIndex = 0;
-        _lastAnnouncedStepIndex = -1;
-        _distanceToNextStepMeters = 0;
-        _lastTrimIdx = 0;
-        _routeTrimStartIdx = 0;
-        _routeProgressIdx = 0;
-        _prevStepDistance = null;
-        _distanceIncreasingCount = 0;
-      });
     setState(() {
       _routePolyline = best!.polyline;
       _routeSteps = best.steps;
@@ -2038,6 +2033,11 @@ Future<void> _maybeApplyFloodWeatherReroute({bool force = false}) async {
   } finally {
     _rerouteInProgress = false;
     print('🌊 === FLOOD REROUTE CHECK END ===');
+    
+    // 👇 HIDE LOADING
+    if (mounted) {
+      setState(() => _isFloodRerouteCalculating = false);
+    }
   }
 }
 
@@ -2497,6 +2497,7 @@ LatLng _offsetByBearing(LatLng start, double bearing, double distanceMeters) {
       for (final assetPath in const [
         'alert_dataset/rizal_pedestrian_zones_merged.geojson',
         'alert_dataset/pedestrians_test.geojson',
+        'alert_dataset/pedestrian_crossing_test_new.geojson',
       ]) {
         try {
           final raw = await rootBundle.loadString(assetPath);
@@ -2544,42 +2545,90 @@ LatLng _offsetByBearing(LatLng start, double bearing, double distanceMeters) {
     }
   }
 
-  void _updateNavigationZoneFlags() {
-    if (!_isNavigating || _currentLocation == null) {
-      if (_inPedestrianZone ||
-          _activePedestrianZoneType != null ||
-          _inNoOvertakingZone) {
-        setState(() {
-          _inPedestrianZone = false;
-          _activePedestrianZoneType = null;
-          _inNoOvertakingZone = false;
-        });
-      }
-      return;
-    }
-
-    final current = _currentLocation!;
-    final activePedestrianZoneType = _findActivePedestrianZoneType(
-      current,
-      _pedestrianAlertRadiusMeters,
-    );
-    final inPedestrian = activePedestrianZoneType != null;
-    final inNoOvertaking = _isNearAnyZonePoint(
-      current,
-      _noOvertakingZonePoints,
-      _noOvertakingAlertRadiusMeters,
-    );
-
-    if (inPedestrian != _inPedestrianZone ||
-        activePedestrianZoneType != _activePedestrianZoneType ||
-        inNoOvertaking != _inNoOvertakingZone) {
+void _updateNavigationZoneFlags() {
+  if (!_isNavigating || _currentLocation == null) {
+    if (_inPedestrianZone ||
+        _activePedestrianZoneType != null ||
+        _inNoOvertakingZone) {
       setState(() {
-        _inPedestrianZone = inPedestrian;
-        _activePedestrianZoneType = activePedestrianZoneType;
-        _inNoOvertakingZone = inNoOvertaking;
+        _inPedestrianZone = false;
+        _activePedestrianZoneType = null;
+        _inNoOvertakingZone = false;
       });
     }
+    return;
   }
+
+  final current = _currentLocation!;
+  
+  // 👇 ADD THIS DEBUG LOGGING
+  print('📍 Current location: ${current.latitude}, ${current.longitude}');
+  print('🚶 Pedestrian zones loaded: ${_pedestrianZonePoints.length}');
+  print('🚫 No overtaking zones loaded: ${_noOvertakingZonePoints.length}');
+  
+  // Check closest pedestrian zone
+  if (_pedestrianZonePoints.isNotEmpty) {
+    double? closestDist;
+    for (final zone in _pedestrianZonePoints) {
+      final d = Geolocator.distanceBetween(
+        current.latitude,
+        current.longitude,
+        zone.location.latitude,
+        zone.location.longitude,
+      );
+      if (closestDist == null || d < closestDist) {
+        closestDist = d;
+      }
+    }
+    print('🚶 Closest pedestrian zone: ${closestDist?.toStringAsFixed(1)}m (threshold: $_pedestrianAlertRadiusMeters m)');
+  }
+  
+  // Check closest no-overtaking zone
+  if (_noOvertakingZonePoints.isNotEmpty) {
+    double? closestDist;
+    for (final zone in _noOvertakingZonePoints) {
+      final d = Geolocator.distanceBetween(
+        current.latitude,
+        current.longitude,
+        zone.latitude,
+        zone.longitude,
+      );
+      if (closestDist == null || d < closestDist) {
+        closestDist = d;
+      }
+    }
+    print('🚫 Closest no-overtaking zone: ${closestDist?.toStringAsFixed(1)}m (threshold: $_noOvertakingAlertRadiusMeters m)');
+  }
+  
+  final activePedestrianZoneType = _findActivePedestrianZoneType(
+    current,
+    _pedestrianAlertRadiusMeters,
+  );
+  final inPedestrian = activePedestrianZoneType != null;
+  final inNoOvertaking = _isNearAnyZonePoint(
+    current,
+    _noOvertakingZonePoints,
+    _noOvertakingAlertRadiusMeters,
+  );
+
+  // 👇 ADD THIS TOO
+  if (inPedestrian) {
+    print('✅ IN PEDESTRIAN ZONE: $activePedestrianZoneType');
+  }
+  if (inNoOvertaking) {
+    print('✅ IN NO OVERTAKING ZONE');
+  }
+
+  if (inPedestrian != _inPedestrianZone ||
+      activePedestrianZoneType != _activePedestrianZoneType ||
+      inNoOvertaking != _inNoOvertakingZone) {
+    setState(() {
+      _inPedestrianZone = inPedestrian;
+      _activePedestrianZoneType = activePedestrianZoneType;
+      _inNoOvertakingZone = inNoOvertaking;
+    });
+  }
+}
 
   String? _findActivePedestrianZoneType(
     LatLng current,
@@ -2661,6 +2710,7 @@ LatLng _offsetByBearing(LatLng start, double bearing, double distanceMeters) {
       for (final assetPath in const [
         'alert_dataset/rizal_no_overtaking_zone.geojson',
         'alert_dataset/no_overtaking_zone_test.geojson',
+        'alert_dataset/no_overtaking_zone_test_new.geojson',
       ]) {
         try {
           final raw = await rootBundle.loadString(assetPath);
@@ -4488,6 +4538,52 @@ LatLng _offsetByBearing(LatLng start, double bearing, double distanceMeters) {
                 ),
               ),
             ),
+            if (_isFloodRerouteCalculating)
+  Positioned.fill(
+    child: Container(
+      color: Colors.black45,
+      child: Center(
+        child: Container(
+          width: 320,
+          padding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 18,
+          ),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              CircularProgressIndicator(
+                color: Color(0xFFD40000),
+              ),
+              SizedBox(height: 14),
+              Text(
+                'Finding flood-safe route',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              SizedBox(height: 6),
+              Text(
+                'Analyzing alternatives...',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.black54,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  ),
         ],
       ),
 

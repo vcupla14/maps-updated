@@ -1,0 +1,22 @@
+{
+  "type": "FeatureCollection",
+  "name": "pedestrian_crossing_test",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Rizal Pedestrian Crossing Alpha",
+        "zone_type": "pedestrians",
+        "highway": "crossing",
+        "crossing": "uncontrolled"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.11635739674077,
+          14.624448899706746
+        ]
+      }
+    }
+  ]
+}
