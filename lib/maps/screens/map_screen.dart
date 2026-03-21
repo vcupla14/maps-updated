@@ -263,6 +263,19 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
+  void _maybeShowHeavyRainWarningBanner() {
+  if (_avoidFloodedAreas) return; // toggle is ON, rerouting handles it
+  if (_routePolyline.isEmpty) return;
+  if (_weatherConditionByPlace.isEmpty) return;
+
+  final hasHeavyRainNearRoute = _isRainingNearRoute(_routePolyline);
+  if (hasHeavyRainNearRoute) {
+    _showRouteUpdateBottomBanner(
+      '⚠️ Heavy rain detected near your route.\nConsider enabling "Avoid Flooded Areas".',
+    );
+  }
+}
+
   Future<void> _loadNavArrowIcon() async {
     const targetSize = 140;
     final data =
@@ -1397,19 +1410,17 @@ class _MapScreenState extends State<MapScreen> {
       for (final place in _priorityBarangayWeatherPlaces) {
         _WeatherInfo? weather;
         try {
-          if (place.name == _manualRainingPlaceName) {
+            // TO (temporary for testing):
             weather = const _WeatherInfo(
               iconCode: _manualRainingIconCode,
-              condition: 'raining',
+              condition: 'heavy intensity rain',
+              conditionId: 502,
             );
-          } else {
-            weather = await _fetchWeatherAt(place.latitude, place.longitude);
-          }
         } catch (_) {
           weather = null;
         }
         if (weather == null) continue;
-        conditions[place.name] = weather.condition;
+        conditions[place.name] = '${weather.conditionId}|${weather.condition}';
 
         final iconDescriptor = await _resolveWeatherIcon(weather.iconCode);
         final offsets = place.name == _manualRainingPlaceName
@@ -1422,6 +1433,9 @@ class _MapScreenState extends State<MapScreen> {
             northMeters: offset.dy,
             eastMeters: offset.dx,
           );
+          final rawCondition = weather.condition; // the plain description
+          final encoded = '${weather.conditionId}|${weather.condition}';
+          conditions[place.name] = encoded;
           markers.add(
             gmaps.Marker(
               markerId: gmaps.MarkerId('weather_${place.name}_$i'),
@@ -1429,7 +1443,7 @@ class _MapScreenState extends State<MapScreen> {
               icon: iconDescriptor,
               infoWindow: gmaps.InfoWindow(
                 title: place.name,
-                snippet: weather.condition,
+                snippet: rawCondition,
               ),
               zIndex: 3,
             ),
@@ -1446,6 +1460,7 @@ class _MapScreenState extends State<MapScreen> {
           ..clear()
           ..addAll(conditions);
         _weatherLastLoadedAt = DateTime.now();
+        _maybeShowHeavyRainWarningBanner();
       });
     } catch (_) {
       if (!mounted) return;
@@ -1471,11 +1486,13 @@ class _MapScreenState extends State<MapScreen> {
     final weather = weatherList.first as Map<String, dynamic>;
     final iconCode = (weather['icon'] ?? '').toString().trim();
     final condition = (weather['description'] ?? '').toString().trim();
+    final conditionId = (weather['id'] as num?)?.toInt() ?? 0; // ADD THIS
     if (iconCode.isEmpty) return null;
 
     return _WeatherInfo(
       iconCode: iconCode,
       condition: condition.isEmpty ? 'No status' : condition,
+      conditionId: conditionId, // ADD THIS
     );
   }
 
@@ -1852,6 +1869,7 @@ class _MapScreenState extends State<MapScreen> {
     });
 
     _fitRouteBounds();
+    _maybeShowHeavyRainWarningBanner();
 
     if (selectedResult.legs != null) {
       RouteFetchService.applyLegsToDestinations(
@@ -1910,10 +1928,13 @@ Future<void> _maybeApplyFloodWeatherReroute({bool force = false}) async {
     final currentFloodHits = _countFloodHits(_routePolyline);
     print('📊 Current route flood hits: $currentFloodHits');
     
-    if (currentFloodHits <= 0) {
-      print('✅ No flood hits on current route - no reroute needed');
-      return;
-    }
+if (currentFloodHits <= 0) {
+  print('✅ No flood hits on current route - no reroute needed');
+  _showRouteUpdateBottomBanner(
+    '✅ Current route is already the most flood-safe option.',
+  );
+  return;
+}
 
     final rainingOnRoute = _isRainingNearRoute(_routePolyline);
     print('🌧️ Is raining near route: $rainingOnRoute');
@@ -1990,15 +2011,21 @@ Future<void> _maybeApplyFloodWeatherReroute({bool force = false}) async {
     }
 
     // Only apply if we found a better route
-    if (best == null) {
-      print('❌ No alternative route found at all');
-      return;
-    }
+if (best == null) {
+  print('❌ No alternative route found at all');
+  _showRouteUpdateBottomBanner(
+    '✅ Current route is already the most flood-safe option.',
+  );
+  return;
+}
     
-    if (bestFloodHits >= currentFloodHits) {
-      print('❌ No better route found (best: $bestFloodHits vs current: $currentFloodHits)');
-      return;
-    }
+if (bestFloodHits >= currentFloodHits) {
+  print('❌ No better route found (best: $bestFloodHits vs current: $currentFloodHits)');
+  _showRouteUpdateBottomBanner(
+    '✅ Current route is already the most flood-safe option.',
+  );
+  return;
+}
 
     print('✅ Found better route! Flood hits: $bestFloodHits (was $currentFloodHits)');
     print('🔄 Applying new route...');
@@ -2126,13 +2153,17 @@ Future<void> _maybeApplyFloodWeatherReroute({bool force = false}) async {
     return false;
   }
 
-  bool _isRainCondition(String condition) {
-    final text = condition.toLowerCase();
-    return text.contains('rain') ||
-        text.contains('drizzle') ||
-        text.contains('thunderstorm') ||
-        text.contains('shower');
-  }
+bool _isRainCondition(String condition) {
+  // condition is now stored as "id|description"
+  final parts = condition.split('|');
+  final id = int.tryParse(parts.first) ?? 0;
+  // Thunderstorm (2xx), heavy rain 502+, heavy shower 522+, heavy drizzle 302+
+  if (id >= 200 && id < 300) return true; // all thunderstorms
+  if (id >= 502 && id <= 504) return true; // heavy/very heavy/extreme rain
+  if (id == 522 || id == 531) return true; // heavy shower rain
+  if (id == 302 || id == 314) return true; // heavy drizzle
+  return false;
+}
 
   int _countFloodHits(List<LatLng> route) {
     if (_floodPoints.isEmpty || route.isEmpty) return 0;
@@ -4823,10 +4854,12 @@ class _WeatherPlace {
 class _WeatherInfo {
   final String iconCode;
   final String condition;
+  final int conditionId; // ADD THIS
 
   const _WeatherInfo({
     required this.iconCode,
     required this.condition,
+    required this.conditionId, // ADD THIS
   });
 }
 
