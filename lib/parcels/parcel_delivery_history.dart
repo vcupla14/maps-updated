@@ -32,9 +32,12 @@ class _DeliveryHistoryPageState extends State<DeliveryHistoryPage> {
 
   Future<void> fetchHistoryParcels() async {
     try {
+      // ✅ FIX: Query only this rider's history directly
+      // No more fetching all parcels and filtering in Dart
       final response = await Supabase.instance.client
           .from('parcels')
           .select('*')
+          .eq('assigned_rider_id', widget.userId)
           .inFilter('status', ['successfully delivered', 'cancelled']);
       final List data = response as List;
 
@@ -43,7 +46,6 @@ class _DeliveryHistoryPageState extends State<DeliveryHistoryPage> {
       int cancelled = 0;
 
       for (var item in data) {
-        if (!_isAssignedToCurrentRider(item)) continue;
         final status = (item['status'] ?? '').toString();
         String timestamp = '';
 
@@ -55,7 +57,8 @@ class _DeliveryHistoryPageState extends State<DeliveryHistoryPage> {
 
         history.add({
           'parcel_id': item['parcel_id'],
-          'status': status == 'successfully delivered' ? 'Delivered' : 'Cancelled',
+          'status':
+              status == 'successfully delivered' ? 'Delivered' : 'Cancelled',
           'timestamp': timestamp,
         });
 
@@ -87,21 +90,6 @@ class _DeliveryHistoryPageState extends State<DeliveryHistoryPage> {
     }
   }
 
-  bool _isAssignedToCurrentRider(Map<String, dynamic> item) {
-    final riderId = widget.userId.trim();
-    final candidates = [
-      item['user_id'],
-      item['assigned_rider'],
-      item['assigned_rider_id'],
-    ];
-    for (final candidate in candidates) {
-      if (candidate != null && candidate.toString().trim() == riderId) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -115,7 +103,6 @@ class _DeliveryHistoryPageState extends State<DeliveryHistoryPage> {
         ),
         child: Stack(
           children: [
-            // 🔴 Top gradient header
             Positioned(
               top: 0,
               left: 0,
@@ -164,8 +151,6 @@ class _DeliveryHistoryPageState extends State<DeliveryHistoryPage> {
                 ),
               ),
             ),
-
-            // 📦 Page content
             Padding(
               padding: const EdgeInsets.only(top: 100.0),
               child: ListView(
@@ -183,10 +168,8 @@ class _DeliveryHistoryPageState extends State<DeliveryHistoryPage> {
     );
   }
 
-  /// ✅ TOTAL SUMMARY CARD (Dynamic from DB)
   Widget _historyParcelCard() {
     final total = deliveredCount + cancelledCount;
-
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -194,64 +177,53 @@ class _DeliveryHistoryPageState extends State<DeliveryHistoryPage> {
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+              offset: const Offset(0, 5))
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          const Text(
-            "Total History of Parcel",
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
-          ),
+          const Text("Total History of Parcel",
+              style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87)),
           const SizedBox(height: 10),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              Column(
-                children: [
-                  const Text("Delivered",
-                      style:
-                          TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
-                  Text(deliveredCount.toString(),
-                      style: const TextStyle(
-                          fontSize: 25,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green)),
-                ],
-              ),
-              Column(
-                children: [
-                  const Text("Total",
-                      style:
-                          TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
-                  Text(total.toString(),
-                      style: const TextStyle(
+              Column(children: [
+                const Text("Delivered",
+                    style:
+                        TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                Text(deliveredCount.toString(),
+                    style: const TextStyle(
                         fontSize: 25,
                         fontWeight: FontWeight.bold,
-                        color: Colors.grey
-                      )),
-                ],
-              ),
-              Column(
-                children: [
-                  const Text("Not Delivered",
-                      style:
-                          TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
-                  Text(cancelledCount.toString(),
-                      style: const TextStyle(
-                          fontSize: 25,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.red)),
-                ],
-              ),
+                        color: Colors.green)),
+              ]),
+              Column(children: [
+                const Text("Total",
+                    style:
+                        TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                Text(total.toString(),
+                    style: const TextStyle(
+                        fontSize: 25,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey)),
+              ]),
+              Column(children: [
+                const Text("Not Delivered",
+                    style:
+                        TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                Text(cancelledCount.toString(),
+                    style: const TextStyle(
+                        fontSize: 25,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.red)),
+              ]),
             ],
           ),
           const SizedBox(height: 12),
@@ -280,7 +252,6 @@ class _DeliveryHistoryPageState extends State<DeliveryHistoryPage> {
     );
   }
 
-  /// ✅ HISTORY LIST CARD
   Widget _parcelHistoryCard() {
     String searchQuery = '';
     String sortFilter = 'All';
@@ -316,18 +287,15 @@ class _DeliveryHistoryPageState extends State<DeliveryHistoryPage> {
             borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 10,
-                offset: const Offset(0, 5),
-              ),
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, 5))
             ],
           ),
           child: Column(
             children: [
-              const Text(
-                "Parcel Delivery History",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
+              const Text("Parcel Delivery History",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -346,8 +314,7 @@ class _DeliveryHistoryPageState extends State<DeliveryHistoryPage> {
                         contentPadding: const EdgeInsets.symmetric(
                             vertical: 0, horizontal: 16),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                            borderRadius: BorderRadius.circular(12)),
                       ),
                     ),
                   ),
@@ -360,14 +327,11 @@ class _DeliveryHistoryPageState extends State<DeliveryHistoryPage> {
                         contentPadding:
                             const EdgeInsets.symmetric(horizontal: 12),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                            borderRadius: BorderRadius.circular(12)),
                       ),
                       items: ['All', 'Delivered', 'Cancelled']
                           .map((value) => DropdownMenuItem(
-                                value: value,
-                                child: Text(value),
-                              ))
+                              value: value, child: Text(value)))
                           .toList(),
                       onChanged: (value) {
                         if (value != null) {
@@ -407,10 +371,8 @@ class _DeliveryHistoryPageState extends State<DeliveryHistoryPage> {
                           : null,
                       child: const Text("Previous"),
                     ),
-                    Text(
-                      "Page ${safePage + 1} of $totalPages",
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
+                    Text("Page ${safePage + 1} of $totalPages",
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
                     TextButton(
                       onPressed: safePage < totalPages - 1
                           ? () => setState(() => currentPage = safePage + 1)
@@ -478,4 +440,3 @@ class _DeliveryHistoryPageState extends State<DeliveryHistoryPage> {
     );
   }
 }
-

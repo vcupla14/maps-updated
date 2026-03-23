@@ -97,8 +97,7 @@ class _MapScreenState extends State<MapScreen> {
   String? _mapTypeSelection;
   double? _cameraZoom;
   static const double _navigationZoom = 19.2;
-  static const Duration _followCameraMinInterval =
-      Duration(milliseconds: 80);
+  static const Duration _followCameraMinInterval = Duration(milliseconds: 80);
 
   static const int _utmZoneNumber = 51;
   static const bool _utmNorthernHemisphere = true;
@@ -106,7 +105,6 @@ class _MapScreenState extends State<MapScreen> {
   static const double _floodOuterCircleRadiusMeters = 52;
   static const int _maxVisibleFloodCircles = 600;
 
-  
   List<LatLng> _floodPoints = [];
   List<gmaps.Circle> _floodCircles = [];
   bool _floodsLoaded = false;
@@ -135,9 +133,10 @@ class _MapScreenState extends State<MapScreen> {
   static const int _routeSampleStride = 6;
   static const double _floodHitDistanceMeters = 40;
   static const double _routeWeatherLinkMeters = 8000;
-  List<LatLng> _debugDetourWaypoints = [];
+  final List<LatLng> _debugDetourWaypoints = [];
   LatLng? _debugFloodHotspot;
   LatLng? _debugBestWaypoint;
+
   /// Snapped location (for route progress)
   LatLng? _currentLocation;
 
@@ -146,7 +145,7 @@ class _MapScreenState extends State<MapScreen> {
   LatLng? _displayRawLocation;
   LatLng? _rawRenderTarget;
 
-  String _currentLocationName = "Your Location";
+  final String _currentLocationName = "Your Location";
 
   final List<DestinationInfo> _destinations = [];
   List<LatLng> _routePolyline = [];
@@ -264,22 +263,23 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _maybeShowHeavyRainWarningBanner() {
-  if (_avoidFloodedAreas) return; // toggle is ON, rerouting handles it
-  if (_routePolyline.isEmpty) return;
-  if (_weatherConditionByPlace.isEmpty) return;
+    if (_avoidFloodedAreas) return; // toggle is ON, rerouting handles it
+    if (_routePolyline.isEmpty) return;
+    if (_weatherConditionByPlace.isEmpty) return;
 
-  final hasHeavyRainNearRoute = _isRainingNearRoute(_routePolyline);
-  if (hasHeavyRainNearRoute) {
-    _showRouteUpdateBottomBanner(
-      '⚠️ Heavy rain detected near your route.\nConsider enabling "Avoid Flooded Areas".',
-    );
+    final hasHeavyRainNearRoute = _isRainingNearRoute(_routePolyline);
+    if (hasHeavyRainNearRoute) {
+      _showRouteUpdateBottomBanner(
+        '⚠️ Heavy rain detected near your route.\nConsider enabling "Avoid Flooded Areas".',
+      );
+    }
   }
-}
 
   Future<void> _loadNavArrowIcon() async {
     const targetSize = 140;
-    final data =
-        await DefaultAssetBundle.of(context).load('assets/images/nav_arrow.png');
+    final data = await DefaultAssetBundle.of(
+      context,
+    ).load('assets/images/nav_arrow.png');
     final codec = await ui.instantiateImageCodec(
       data.buffer.asUint8List(),
       targetWidth: 90,
@@ -308,9 +308,7 @@ class _MapScreenState extends State<MapScreen> {
     final dy = (targetSize - arrow.height) / 2;
     canvas.drawImage(arrow, ui.Offset(dx, dy), ui.Paint());
 
-    final image = await recorder
-        .endRecording()
-        .toImage(targetSize, targetSize);
+    final image = await recorder.endRecording().toImage(targetSize, targetSize);
     final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
     if (bytes == null) return;
     final icon = gmaps.BitmapDescriptor.fromBytes(bytes.buffer.asUint8List());
@@ -358,26 +356,28 @@ class _MapScreenState extends State<MapScreen> {
             activityType: ActivityType.automotiveNavigation,
             pauseLocationUpdatesAutomatically: false,
           );
-    _positionSub = Geolocator.getPositionStream(
-      locationSettings: locationSettings,
-    ).listen((pos) {
-      if (!mounted) return;
+    _positionSub =
+        Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+      (pos) {
+        if (!mounted) return;
 
-      if (!_hasCompassHeading) {
-        final heading = pos.heading;
-        if (!heading.isNaN && heading >= 0) {
-          _currentHeading = heading;
+        if (!_hasCompassHeading) {
+          final heading = pos.heading;
+          if (!heading.isNaN && heading >= 0) {
+            _currentHeading = heading;
+          }
         }
-      }
-      _currentSpeedMps = (pos.speed.isNaN || pos.speed < 0) ? null : pos.speed;
+        _currentSpeedMps =
+            (pos.speed.isNaN || pos.speed < 0) ? null : pos.speed;
 
-      final rawNow = LatLng(pos.latitude, pos.longitude);
-      _rawLocation = rawNow;
-      if (!_isNavigating && _currentLocation == null) {
-        _currentLocation = rawNow;
-      }
-      _enqueueLocationSample(pos);
-    });
+        final rawNow = LatLng(pos.latitude, pos.longitude);
+        _rawLocation = rawNow;
+        if (!_isNavigating && _currentLocation == null) {
+          _currentLocation = rawNow;
+        }
+        _enqueueLocationSample(pos);
+      },
+    );
 
     _compassSub?.cancel();
     _compassSub = FlutterCompass.events?.listen((event) {
@@ -490,7 +490,10 @@ class _MapScreenState extends State<MapScreen> {
       if (projection != null &&
           projection.distanceMeters <= _routeMatchMaxDistanceMeters) {
         nextLocation = projection.point;
-        _routeProgressIdx = math.max(_routeProgressIdx, projection.segmentIndex);
+        _routeProgressIdx = math.max(
+          _routeProgressIdx,
+          projection.segmentIndex,
+        );
       } else {
         nextLocation = await _snapToRoad(filteredRaw) ?? filteredRaw;
       }
@@ -542,28 +545,17 @@ class _MapScreenState extends State<MapScreen> {
             begin: Offset(slideLeft ? -0.15 : 0.15, 0),
             end: Offset.zero,
           ).animate(
-            CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeOutCubic,
-            ),
+            CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
           );
 
           final fadeAnimation = Tween<double>(
             begin: 0.0,
             end: 1.0,
-          ).animate(
-            CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeIn,
-            ),
-          );
+          ).animate(CurvedAnimation(parent: animation, curve: Curves.easeIn));
 
           return SlideTransition(
             position: slideAnimation,
-            child: FadeTransition(
-              opacity: fadeAnimation,
-              child: child,
-            ),
+            child: FadeTransition(opacity: fadeAnimation, child: child),
           );
         },
       ),
@@ -576,34 +568,27 @@ class _MapScreenState extends State<MapScreen> {
       PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 450),
         reverseTransitionDuration: const Duration(milliseconds: 450),
-        pageBuilder: (_, animation, __) => ParcelsPage(userId: widget.userId, liveLat: _activeLat, liveLng: _activeLng),
+        pageBuilder: (_, animation, __) => ParcelsPage(
+          userId: widget.userId,
+          liveLat: _activeLat,
+          liveLng: _activeLng,
+        ),
         transitionsBuilder: (_, animation, __, child) {
           final slideAnimation = Tween<Offset>(
             begin: const Offset(0.15, 0),
             end: Offset.zero,
           ).animate(
-            CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeOutCubic,
-            ),
+            CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
           );
 
           final fadeAnimation = Tween<double>(
             begin: 0.0,
             end: 1.0,
-          ).animate(
-            CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeIn,
-            ),
-          );
+          ).animate(CurvedAnimation(parent: animation, curve: Curves.easeIn));
 
           return SlideTransition(
             position: slideAnimation,
-            child: FadeTransition(
-              opacity: fadeAnimation,
-              child: child,
-            ),
+            child: FadeTransition(opacity: fadeAnimation, child: child),
           );
         },
       ),
@@ -707,8 +692,6 @@ class _MapScreenState extends State<MapScreen> {
       _applyFollowCamera(zoomOverride: _navigationZoom, force: true);
       _updateNavigationProgress();
     }
-
-    
   }
 
   void _endNavigation() {
@@ -741,18 +724,22 @@ class _MapScreenState extends State<MapScreen> {
         ];
         _fitBounds(points);
       } else {
-        _animateCameraTo(_currentLocation!, _cameraZoom ?? 17,
-            tilt: 0, bearing: 0);
+        _animateCameraTo(
+          _currentLocation!,
+          _cameraZoom ?? 17,
+          tilt: 0,
+          bearing: 0,
+        );
       }
     }
-
-    
   }
 
   int? _extractParcelId(DestinationInfo destination) {
     if (destination.parcelId != null) return destination.parcelId;
-    final match = RegExp(r'Parcel\s*#(\d+)', caseSensitive: false)
-        .firstMatch(destination.name);
+    final match = RegExp(
+      r'Parcel\s*#(\d+)',
+      caseSensitive: false,
+    ).firstMatch(destination.name);
     if (match == null) return null;
     return int.tryParse(match.group(1)!);
   }
@@ -777,7 +764,9 @@ class _MapScreenState extends State<MapScreen> {
     if (distance > _destinationArrivalThresholdMeters) return;
 
     _arrivalHandlingInProgress = true;
-    unawaited(_voiceAlertService.announceNavigation('Arrived at your destination'));
+    unawaited(
+      _voiceAlertService.announceNavigation('Arrived at your destination'),
+    );
     final completedParcelId = _extractParcelId(target);
 
     if (mounted) {
@@ -830,9 +819,7 @@ class _MapScreenState extends State<MapScreen> {
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         child: Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
@@ -840,10 +827,7 @@ class _MapScreenState extends State<MapScreen> {
             gradient: const LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [
-                Color(0xFFFF0000),
-                Color(0xFF800000),
-              ],
+              colors: [Color(0xFFFF0000), Color(0xFF800000)],
               stops: [0.0, 1.0],
             ),
           ),
@@ -874,10 +858,7 @@ class _MapScreenState extends State<MapScreen> {
                 ),
                 child: const Text(
                   'Go back to Maps',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
                 ),
               ),
               if (showContinue) const SizedBox(height: 8),
@@ -896,10 +877,7 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                   child: const Text(
                     'Continue to the next Destination',
-                    style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
                   ),
                 ),
               const SizedBox(height: 8),
@@ -937,10 +915,7 @@ class _MapScreenState extends State<MapScreen> {
                 ),
                 child: const Text(
                   'Deliver Parcel',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
                 ),
               ),
             ],
@@ -965,10 +940,7 @@ class _MapScreenState extends State<MapScreen> {
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [
-                    Color(0xFFFF0000),
-                    Color(0xFF800000),
-                  ],
+                  colors: [Color(0xFFFF0000), Color(0xFF800000)],
                   stops: [0.0, 1.0],
                 ),
                 borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -978,8 +950,11 @@ class _MapScreenState extends State<MapScreen> {
                   Align(
                     alignment: Alignment.topCenter,
                     child: Padding(
-                      padding:
-                          const EdgeInsets.only(top: 16, left: 16, right: 16),
+                      padding: const EdgeInsets.only(
+                        top: 16,
+                        left: 16,
+                        right: 16,
+                      ),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -1000,51 +975,54 @@ class _MapScreenState extends State<MapScreen> {
                                 onTap: () {
                                   String? nextSelection;
                                   setModalState(() {
-                                    nextSelection = _mapTypeSelection == 'floods'
-                                        ? null
-                                        : 'floods';
+                                    nextSelection =
+                                        _mapTypeSelection == 'floods'
+                                            ? null
+                                            : 'floods';
                                     _mapTypeSelection = nextSelection;
                                   });
-                                  setState(() => _mapTypeSelection = nextSelection);
+                                  setState(
+                                    () => _mapTypeSelection = nextSelection,
+                                  );
                                   if (nextSelection == 'floods' &&
                                       _floodCircles.isEmpty) {
                                     _loadFloodProneAreas();
                                   }
                                 },
                                 borderRadius: BorderRadius.circular(14),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 72,
-                                  height: 72,
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.15),
-                                    borderRadius: BorderRadius.circular(14),
-                                    border: Border.all(
-                                      color: Colors.white.withOpacity(
-                                          _mapTypeSelection == 'floods'
-                                              ? 1
-                                              : 0.5),
-                                      width:
-                                          _mapTypeSelection == 'floods'
-                                              ? 2
-                                              : 1,
-                                    ),
-                                  ),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(13),
-                                    child: Image.asset(
-                                      'assets/images/floods_icon.png',
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
                                       width: 72,
                                       height: 72,
-                                      fit: BoxFit.cover,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.15),
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(
+                                          color: Colors.white.withOpacity(
+                                            _mapTypeSelection == 'floods'
+                                                ? 1
+                                                : 0.5,
+                                          ),
+                                          width: _mapTypeSelection == 'floods'
+                                              ? 2
+                                              : 1,
+                                        ),
+                                      ),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(13),
+                                        child: Image.asset(
+                                          'assets/images/floods_icon.png',
+                                          width: 72,
+                                          height: 72,
+                                          fit: BoxFit.cover,
+                                        ),
+                                      ),
                                     ),
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                const Text(
-                                  'Floods',
+                                    const SizedBox(height: 8),
+                                    const Text(
+                                      'Floods',
                                       style: TextStyle(
                                         color: Colors.white,
                                         fontSize: 14,
@@ -1058,50 +1036,53 @@ class _MapScreenState extends State<MapScreen> {
                                 onTap: () {
                                   String? nextSelection;
                                   setModalState(() {
-                                    nextSelection = _mapTypeSelection == 'weather'
-                                        ? null
-                                        : 'weather';
+                                    nextSelection =
+                                        _mapTypeSelection == 'weather'
+                                            ? null
+                                            : 'weather';
                                     _mapTypeSelection = nextSelection;
                                   });
-                                  setState(() => _mapTypeSelection = nextSelection);
+                                  setState(
+                                    () => _mapTypeSelection = nextSelection,
+                                  );
                                   if (nextSelection == 'weather') {
                                     _loadWeatherMarkers();
                                   }
                                 },
                                 borderRadius: BorderRadius.circular(14),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 72,
-                                  height: 72,
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.15),
-                                    borderRadius: BorderRadius.circular(14),
-                                    border: Border.all(
-                                      color: Colors.white.withOpacity(
-                                          _mapTypeSelection == 'weather'
-                                              ? 1
-                                              : 0.5),
-                                      width:
-                                          _mapTypeSelection == 'weather'
-                                              ? 2
-                                              : 1,
-                                    ),
-                                  ),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(13),
-                                    child: Image.asset(
-                                      'assets/images/weather_icon.png',
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
                                       width: 72,
                                       height: 72,
-                                      fit: BoxFit.cover,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.15),
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(
+                                          color: Colors.white.withOpacity(
+                                            _mapTypeSelection == 'weather'
+                                                ? 1
+                                                : 0.5,
+                                          ),
+                                          width: _mapTypeSelection == 'weather'
+                                              ? 2
+                                              : 1,
+                                        ),
+                                      ),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(13),
+                                        child: Image.asset(
+                                          'assets/images/weather_icon.png',
+                                          width: 72,
+                                          height: 72,
+                                          fit: BoxFit.cover,
+                                        ),
+                                      ),
                                     ),
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                const Text(
-                                  'Weather',
+                                    const SizedBox(height: 8),
+                                    const Text(
+                                      'Weather',
                                       style: TextStyle(
                                         color: Colors.white,
                                         fontSize: 14,
@@ -1114,10 +1095,7 @@ class _MapScreenState extends State<MapScreen> {
                             ],
                           ),
                           const SizedBox(height: 12),
-                          Container(
-                            height: 1,
-                            color: Colors.white,
-                          ),
+                          Container(height: 1, color: Colors.white),
                           const SizedBox(height: 12),
                           Row(
                             children: [
@@ -1137,7 +1115,9 @@ class _MapScreenState extends State<MapScreen> {
                                   setModalState(() {
                                     _avoidFloodedAreas = nextValue;
                                   });
-                                  setState(() => _avoidFloodedAreas = nextValue);
+                                  setState(
+                                    () => _avoidFloodedAreas = nextValue,
+                                  );
                                   if (nextValue) {
                                     _maybeApplyFloodWeatherReroute(force: true);
                                   }
@@ -1215,12 +1195,7 @@ class _MapScreenState extends State<MapScreen> {
           if (isLonLat) {
             latLng = LatLng(y, x);
           } else {
-            latLng = _utmToLatLng(
-              x,
-              y,
-              _utmZoneNumber,
-              _utmNorthernHemisphere,
-            );
+            latLng = _utmToLatLng(x, y, _utmZoneNumber, _utmNorthernHemisphere);
           }
 
           final key =
@@ -1410,12 +1385,12 @@ class _MapScreenState extends State<MapScreen> {
       for (final place in _priorityBarangayWeatherPlaces) {
         _WeatherInfo? weather;
         try {
-            // TO (temporary for testing):
-            weather = const _WeatherInfo(
-              iconCode: _manualRainingIconCode,
-              condition: 'heavy intensity rain',
-              conditionId: 502,
-            );
+          // TO (temporary for testing):
+          weather = const _WeatherInfo(
+            iconCode: _manualRainingIconCode,
+            condition: 'heavy intensity rain',
+            conditionId: 502,
+          );
         } catch (_) {
           weather = null;
         }
@@ -1501,7 +1476,9 @@ class _MapScreenState extends State<MapScreen> {
     if (cached != null) return cached;
 
     try {
-      final url = Uri.parse('https://openweathermap.org/img/wn/$iconCode@2x.png');
+      final url = Uri.parse(
+        'https://openweathermap.org/img/wn/$iconCode@2x.png',
+      );
       final response = await http.get(url);
       if (response.statusCode == 200) {
         final bytes = response.bodyBytes;
@@ -1596,17 +1573,17 @@ class _MapScreenState extends State<MapScreen> {
                 3 * eccSquared * eccSquared / 64 -
                 5 * eccSquared * eccSquared * eccSquared / 256));
 
-    final double e1 = (1 - math.sqrt(1 - eccSquared)) /
-        (1 + math.sqrt(1 - eccSquared));
+    final double e1 =
+        (1 - math.sqrt(1 - eccSquared)) / (1 + math.sqrt(1 - eccSquared));
 
     final double phi1Rad = mu +
         (3 * e1 / 2 - 27 * math.pow(e1, 3) / 32) * math.sin(2 * mu) +
-        (21 * e1 * e1 / 16 - 55 * math.pow(e1, 4) / 32) *
-            math.sin(4 * mu) +
+        (21 * e1 * e1 / 16 - 55 * math.pow(e1, 4) / 32) * math.sin(4 * mu) +
         (151 * math.pow(e1, 3) / 96) * math.sin(6 * mu) +
         (1097 * math.pow(e1, 4) / 512) * math.sin(8 * mu);
 
-    final double n1 = a / math.sqrt(1 - eccSquared * math.sin(phi1Rad) * math.sin(phi1Rad));
+    final double n1 =
+        a / math.sqrt(1 - eccSquared * math.sin(phi1Rad) * math.sin(phi1Rad));
     final double t1 = math.tan(phi1Rad) * math.tan(phi1Rad);
     final double c1 = eccPrimeSquared * math.cos(phi1Rad) * math.cos(phi1Rad);
     final double r1 = a *
@@ -1713,12 +1690,10 @@ class _MapScreenState extends State<MapScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => SearchDestinationSheet(
-        onDestinationSelected: _addDestination,
-      ),
+      builder: (_) =>
+          SearchDestinationSheet(onDestinationSelected: _addDestination),
     );
   }
-
 
   Future<void> _addDestination(LatLng location, String name) async {
     if (_currentLocation == null) {
@@ -1730,10 +1705,7 @@ class _MapScreenState extends State<MapScreen> {
       );
     }
 
-    final newDestination = DestinationInfo(
-      location: location,
-      name: name,
-    );
+    final newDestination = DestinationInfo(location: location, name: name);
 
     _destinations.add(newDestination);
     if (_isNavigating) {
@@ -1763,8 +1735,6 @@ class _MapScreenState extends State<MapScreen> {
     } else {
       _animateCameraTo(location, 15);
     }
-
-    
   }
 
   Future<void> _rebuildDestinationOrder() async {
@@ -1817,7 +1787,8 @@ class _MapScreenState extends State<MapScreen> {
       final routeHasFloodHits = _countFloodHits(selectedResult.polyline) > 0;
       final routeHasRain = _isRainingNearRoute(selectedResult.polyline);
       if (routeHasFloodHits && routeHasRain) {
-        final candidates = await RouteFetchService.fetchMultiStopRouteCandidates(
+        final candidates =
+            await RouteFetchService.fetchMultiStopRouteCandidates(
           currentLocation: _currentLocation!,
           destinations: _destinations,
         );
@@ -1885,188 +1856,194 @@ class _MapScreenState extends State<MapScreen> {
     await _maybeApplyFloodWeatherReroute();
   }
 
-Future<void> _maybeApplyFloodWeatherReroute({bool force = false}) async {
-  print('🌊 === FLOOD REROUTE CHECK START ===');
-  
-  if (!_avoidFloodedAreas) {
-    print('❌ Avoid flooded areas is OFF');
-    return;
-  }
-  
-  if (_rerouteInProgress) {
-    print('❌ Reroute already in progress');
-    return;
-  }
-  
-  if (_destinations.isEmpty || _currentLocation == null) {
-    print('❌ No destinations or current location');
-    return;
-  }
-  
-  if (_routePolyline.isEmpty) {
-    print('❌ Route polyline is empty');
-    return;
-  }
+  Future<void> _maybeApplyFloodWeatherReroute({bool force = false}) async {
+    print('🌊 === FLOOD REROUTE CHECK START ===');
 
-  print('✅ Basic checks passed, loading flood/weather data...');
-  
-  // 👇 SHOW LOADING
-  if (mounted) {
-    setState(() => _isFloodRerouteCalculating = true);
-  }
-  
-  try {
-    await _ensureFloodWeatherDataForAvoidance(force: force);
-    
-    if (!mounted || _floodPoints.isEmpty) {
-      print('❌ Not mounted or no flood points loaded');
-      return;
-    }
-    
-    print('✅ Flood points loaded: ${_floodPoints.length} points');
-
-    final currentFloodHits = _countFloodHits(_routePolyline);
-    print('📊 Current route flood hits: $currentFloodHits');
-    
-if (currentFloodHits <= 0) {
-  print('✅ No flood hits on current route - no reroute needed');
-  _showRouteUpdateBottomBanner(
-    '✅ Current route is already the most flood-safe option.',
-  );
-  return;
-}
-
-    final rainingOnRoute = _isRainingNearRoute(_routePolyline);
-    print('🌧️ Is raining near route: $rainingOnRoute');
-    
-    if (!rainingOnRoute) {
-      print('❌ Not raining near route - no reroute needed');
+    if (!_avoidFloodedAreas) {
+      print('❌ Avoid flooded areas is OFF');
       return;
     }
 
-    print('🔄 Starting reroute process...');
-    _rerouteInProgress = true;
-    
-    print('📍 Current route has $currentFloodHits flood hits');
-    print('⏱️ Waiting 0.5 seconds...');
-    
-    await Future.delayed(const Duration(milliseconds: 500));
-    if (!mounted) {
-      print('❌ Not mounted after delay');
+    if (_rerouteInProgress) {
+      print('❌ Reroute already in progress');
       return;
     }
 
-    print('🔍 Fetching alternative route candidates...');
-    final candidates = await RouteFetchService.fetchMultiStopRouteCandidates(
-      currentLocation: _currentLocation!,
-      destinations: _destinations,
-    );
-    
-    if (!mounted) {
-      print('❌ Not mounted after fetching candidates');
+    if (_destinations.isEmpty || _currentLocation == null) {
+      print('❌ No destinations or current location');
       return;
     }
-    
-    print('📦 Got ${candidates.length} candidate routes');
 
-    RouteFetchResult? best;
-    var bestFloodHits = currentFloodHits;
+    if (_routePolyline.isEmpty) {
+      print('❌ Route polyline is empty');
+      return;
+    }
 
-    // Check OSRM candidates
-    for (int i = 0; i < candidates.length; i++) {
-      final candidate = candidates[i];
-      if (candidate.polyline.length < 5) {
-        print('   Candidate $i: too short (${candidate.polyline.length} points)');
-        continue;
+    print('✅ Basic checks passed, loading flood/weather data...');
+
+    // 👇 SHOW LOADING
+    if (mounted) {
+      setState(() => _isFloodRerouteCalculating = true);
+    }
+
+    try {
+      await _ensureFloodWeatherDataForAvoidance(force: force);
+
+      if (!mounted || _floodPoints.isEmpty) {
+        print('❌ Not mounted or no flood points loaded');
+        return;
       }
-      
-      final hits = _countFloodHits(candidate.polyline);
-      print('   Candidate $i: $hits flood hits');
-      
-      if (hits < bestFloodHits) {
-        bestFloodHits = hits;
-        best = candidate;
-        print('   ✅ New best candidate!');
+
+      print('✅ Flood points loaded: ${_floodPoints.length} points');
+
+      final currentFloodHits = _countFloodHits(_routePolyline);
+      print('📊 Current route flood hits: $currentFloodHits');
+
+      if (currentFloodHits <= 0) {
+        print('✅ No flood hits on current route - no reroute needed');
+        _showRouteUpdateBottomBanner(
+          '✅ Current route is already the most flood-safe option.',
+        );
+        return;
       }
-    }
 
-    // Try detour if candidates didn't help
-    if (best == null || bestFloodHits >= currentFloodHits) {
-      print('🚧 Trying detour avoidance route...');
-      final detour = await _buildDetourAvoidanceRoute(
-        baseRoute: _routePolyline,
-        currentHits: currentFloodHits,
-      );
-      if (detour != null) {
-        final detourHits = _countFloodHits(detour.polyline);
-        print('   Detour route: $detourHits flood hits');
-        if (detourHits < bestFloodHits) {
-          best = detour;
-          bestFloodHits = detourHits;
-          print('   ✅ Detour is better!');
-        }
-      } else {
-        print('   ❌ No detour route found');
+      final rainingOnRoute = _isRainingNearRoute(_routePolyline);
+      print('🌧️ Is raining near route: $rainingOnRoute');
+
+      if (!rainingOnRoute) {
+        print('❌ Not raining near route - no reroute needed');
+        return;
       }
-    }
 
-    // Only apply if we found a better route
-if (best == null) {
-  print('❌ No alternative route found at all');
-  _showRouteUpdateBottomBanner(
-    '✅ Current route is already the most flood-safe option.',
-  );
-  return;
-}
-    
-if (bestFloodHits >= currentFloodHits) {
-  print('❌ No better route found (best: $bestFloodHits vs current: $currentFloodHits)');
-  _showRouteUpdateBottomBanner(
-    '✅ Current route is already the most flood-safe option.',
-  );
-  return;
-}
+      print('🔄 Starting reroute process...');
+      _rerouteInProgress = true;
 
-    print('✅ Found better route! Flood hits: $bestFloodHits (was $currentFloodHits)');
-    print('🔄 Applying new route...');
+      print('📍 Current route has $currentFloodHits flood hits');
+      print('⏱️ Waiting 0.5 seconds...');
 
-    setState(() {
-      _routePolyline = best!.polyline;
-      _routeSteps = best.steps;
-      _currentStepIndex = 0;
-      _distanceToNextStepMeters = 0;
-      _lastTrimIdx = 0;
-      _routeTrimStartIdx = 0;
-      _routeProgressIdx = 0;
-      _prevStepDistance = null;
-      _distanceIncreasingCount = 0;
-    });
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (!mounted) {
+        print('❌ Not mounted after delay');
+        return;
+      }
 
-    if (best.legs != null) {
-      RouteFetchService.applyLegsToDestinations(
-        legs: best.legs!,
+      print('🔍 Fetching alternative route candidates...');
+      final candidates = await RouteFetchService.fetchMultiStopRouteCandidates(
+        currentLocation: _currentLocation!,
         destinations: _destinations,
       );
-    }
 
-    _fitRouteBounds();
-    
-    print('💬 Showing banner...');
-    _showRouteUpdateBottomBanner(
-      'Rerouted to least flooded route\n($currentFloodHits → $bestFloodHits flood points)',
-    );
-    
-    print('✅ Reroute complete!');
-  } finally {
-    _rerouteInProgress = false;
-    print('🌊 === FLOOD REROUTE CHECK END ===');
-    
-    // 👇 HIDE LOADING
-    if (mounted) {
-      setState(() => _isFloodRerouteCalculating = false);
+      if (!mounted) {
+        print('❌ Not mounted after fetching candidates');
+        return;
+      }
+
+      print('📦 Got ${candidates.length} candidate routes');
+
+      RouteFetchResult? best;
+      var bestFloodHits = currentFloodHits;
+
+      // Check OSRM candidates
+      for (int i = 0; i < candidates.length; i++) {
+        final candidate = candidates[i];
+        if (candidate.polyline.length < 5) {
+          print(
+            '   Candidate $i: too short (${candidate.polyline.length} points)',
+          );
+          continue;
+        }
+
+        final hits = _countFloodHits(candidate.polyline);
+        print('   Candidate $i: $hits flood hits');
+
+        if (hits < bestFloodHits) {
+          bestFloodHits = hits;
+          best = candidate;
+          print('   ✅ New best candidate!');
+        }
+      }
+
+      // Try detour if candidates didn't help
+      if (best == null || bestFloodHits >= currentFloodHits) {
+        print('🚧 Trying detour avoidance route...');
+        final detour = await _buildDetourAvoidanceRoute(
+          baseRoute: _routePolyline,
+          currentHits: currentFloodHits,
+        );
+        if (detour != null) {
+          final detourHits = _countFloodHits(detour.polyline);
+          print('   Detour route: $detourHits flood hits');
+          if (detourHits < bestFloodHits) {
+            best = detour;
+            bestFloodHits = detourHits;
+            print('   ✅ Detour is better!');
+          }
+        } else {
+          print('   ❌ No detour route found');
+        }
+      }
+
+      // Only apply if we found a better route
+      if (best == null) {
+        print('❌ No alternative route found at all');
+        _showRouteUpdateBottomBanner(
+          '✅ Current route is already the most flood-safe option.',
+        );
+        return;
+      }
+
+      if (bestFloodHits >= currentFloodHits) {
+        print(
+          '❌ No better route found (best: $bestFloodHits vs current: $currentFloodHits)',
+        );
+        _showRouteUpdateBottomBanner(
+          '✅ Current route is already the most flood-safe option.',
+        );
+        return;
+      }
+
+      print(
+        '✅ Found better route! Flood hits: $bestFloodHits (was $currentFloodHits)',
+      );
+      print('🔄 Applying new route...');
+
+      setState(() {
+        _routePolyline = best!.polyline;
+        _routeSteps = best.steps;
+        _currentStepIndex = 0;
+        _distanceToNextStepMeters = 0;
+        _lastTrimIdx = 0;
+        _routeTrimStartIdx = 0;
+        _routeProgressIdx = 0;
+        _prevStepDistance = null;
+        _distanceIncreasingCount = 0;
+      });
+
+      if (best.legs != null) {
+        RouteFetchService.applyLegsToDestinations(
+          legs: best.legs!,
+          destinations: _destinations,
+        );
+      }
+
+      _fitRouteBounds();
+
+      print('💬 Showing banner...');
+      _showRouteUpdateBottomBanner(
+        'Rerouted to least flooded route\n($currentFloodHits → $bestFloodHits flood points)',
+      );
+
+      print('✅ Reroute complete!');
+    } finally {
+      _rerouteInProgress = false;
+      print('🌊 === FLOOD REROUTE CHECK END ===');
+
+      // 👇 HIDE LOADING
+      if (mounted) {
+        setState(() => _isFloodRerouteCalculating = false);
+      }
     }
   }
-}
 
   Future<void> _ensureFloodWeatherDataForAvoidance({bool force = false}) async {
     if (!_floodsLoaded) {
@@ -2153,17 +2130,17 @@ if (bestFloodHits >= currentFloodHits) {
     return false;
   }
 
-bool _isRainCondition(String condition) {
-  // condition is now stored as "id|description"
-  final parts = condition.split('|');
-  final id = int.tryParse(parts.first) ?? 0;
-  // Thunderstorm (2xx), heavy rain 502+, heavy shower 522+, heavy drizzle 302+
-  if (id >= 200 && id < 300) return true; // all thunderstorms
-  if (id >= 502 && id <= 504) return true; // heavy/very heavy/extreme rain
-  if (id == 522 || id == 531) return true; // heavy shower rain
-  if (id == 302 || id == 314) return true; // heavy drizzle
-  return false;
-}
+  bool _isRainCondition(String condition) {
+    // condition is now stored as "id|description"
+    final parts = condition.split('|');
+    final id = int.tryParse(parts.first) ?? 0;
+    // Thunderstorm (2xx), heavy rain 502+, heavy shower 522+, heavy drizzle 302+
+    if (id >= 200 && id < 300) return true; // all thunderstorms
+    if (id >= 502 && id <= 504) return true; // heavy/very heavy/extreme rain
+    if (id == 522 || id == 531) return true; // heavy shower rain
+    if (id == 302 || id == 314) return true; // heavy drizzle
+    return false;
+  }
 
   int _countFloodHits(List<LatLng> route) {
     if (_floodPoints.isEmpty || route.isEmpty) return 0;
@@ -2210,102 +2187,107 @@ bool _isRainCondition(String condition) {
     return hits;
   }
 
-Future<RouteFetchResult?> _buildDetourAvoidanceRoute({
-  required List<LatLng> baseRoute,
-  required int currentHits,
-}) async {
-  if (_currentLocation == null || _destinations.isEmpty || currentHits <= 0) {
-    print('❌ Detour skip: no location/destinations or no flood hits');
-    return null;
-  }
-
-  final hotspot = _firstFloodHotspotOnRoute(baseRoute);
-  if (hotspot == null) {
-    print('❌ Detour skip: no flood hotspot found on route');
-    return null;
-  }
-
-  print('🔍 Flood hotspot found at: ${hotspot.latitude}, ${hotspot.longitude}');
-
-  // Create waypoints BEFORE and AFTER the flood zone to force a route around it
-  final detourWaypoints = _buildSmartDetourWaypoints(hotspot, baseRoute);
-  if (detourWaypoints.isEmpty) {
-    print('❌ Detour skip: no waypoints generated');
-    return null;
-  }
-
-  print('📍 Generated ${detourWaypoints.length} detour waypoints');
-
-  RouteFetchResult? best;
-  var bestHits = currentHits;
-
-  int testedCount = 0;
-  for (final waypoint in detourWaypoints) {
-    testedCount++;
-    print('🧪 Testing waypoint $testedCount/${detourWaypoints.length}...');
-    
-    // Snap waypoint to nearest road
-    LatLng snappedWaypoint;
-    try {
-      snappedWaypoint = await OSRMService.getNearestRoadPoint(waypoint)
-              .timeout(const Duration(seconds: 2)) ??
-          waypoint;
-      print('   ✓ Snapped to road');
-    } catch (e) {
-      snappedWaypoint = waypoint;
-      print('   ⚠️ Failed to snap: $e');
+  Future<RouteFetchResult?> _buildDetourAvoidanceRoute({
+    required List<LatLng> baseRoute,
+    required int currentHits,
+  }) async {
+    if (_currentLocation == null || _destinations.isEmpty || currentHits <= 0) {
+      print('❌ Detour skip: no location/destinations or no flood hits');
+      return null;
     }
 
-    // Skip if waypoint is in a flood zone
-    if (_isFloodPointNearPoint(
-      snappedWaypoint,
-      radiusMeters: _floodHitDistanceMeters * .5,
-    )) {
-      print('   ❌ Waypoint is in flood zone, skipping');
-      continue;
+    final hotspot = _firstFloodHotspotOnRoute(baseRoute);
+    if (hotspot == null) {
+      print('❌ Detour skip: no flood hotspot found on route');
+      return null;
     }
 
-    // Create route with waypoint
-    final withWaypoint = <DestinationInfo>[
-      DestinationInfo(location: snappedWaypoint, name: 'Detour'),
-      ..._destinations,
-    ];
-
-    print('   🛣️ Fetching route with waypoint...');
-    final candidate = await RouteFetchService.fetchMultiStopRoute(
-      currentLocation: _currentLocation!,
-      destinations: withWaypoint,
+    print(
+      '🔍 Flood hotspot found at: ${hotspot.latitude}, ${hotspot.longitude}',
     );
 
-    print('   📏 Route has ${candidate.polyline.length} points');
-
-    if (candidate.polyline.length < 5) {
-      print('   ❌ Route too short');
-      continue;
+    // Create waypoints BEFORE and AFTER the flood zone to force a route around it
+    final detourWaypoints = _buildSmartDetourWaypoints(hotspot, baseRoute);
+    if (detourWaypoints.isEmpty) {
+      print('❌ Detour skip: no waypoints generated');
+      return null;
     }
 
-    final hits = _countFloodHits(candidate.polyline);
-    print('   💧 Flood hits: $hits (current best: $bestHits)');
-    
-    if (hits < bestHits) {
-      bestHits = hits;
-      best = candidate;
-      print('   ✅ New best route!');
-      if (hits == 0) {
-        print('   🎉 Perfect route with 0 hits!');
-        break;
+    print('📍 Generated ${detourWaypoints.length} detour waypoints');
+
+    RouteFetchResult? best;
+    var bestHits = currentHits;
+
+    int testedCount = 0;
+    for (final waypoint in detourWaypoints) {
+      testedCount++;
+      print('🧪 Testing waypoint $testedCount/${detourWaypoints.length}...');
+
+      // Snap waypoint to nearest road
+      LatLng snappedWaypoint;
+      try {
+        snappedWaypoint = await OSRMService.getNearestRoadPoint(
+              waypoint,
+            ).timeout(const Duration(seconds: 2)) ??
+            waypoint;
+        print('   ✓ Snapped to road');
+      } catch (e) {
+        snappedWaypoint = waypoint;
+        print('   ⚠️ Failed to snap: $e');
+      }
+
+      // Skip if waypoint is in a flood zone
+      if (_isFloodPointNearPoint(
+        snappedWaypoint,
+        radiusMeters: _floodHitDistanceMeters * .5,
+      )) {
+        print('   ❌ Waypoint is in flood zone, skipping');
+        continue;
+      }
+
+      // Create route with waypoint
+      final withWaypoint = <DestinationInfo>[
+        DestinationInfo(location: snappedWaypoint, name: 'Detour'),
+        ..._destinations,
+      ];
+
+      print('   🛣️ Fetching route with waypoint...');
+      final candidate = await RouteFetchService.fetchMultiStopRoute(
+        currentLocation: _currentLocation!,
+        destinations: withWaypoint,
+      );
+
+      print('   📏 Route has ${candidate.polyline.length} points');
+
+      if (candidate.polyline.length < 5) {
+        print('   ❌ Route too short');
+        continue;
+      }
+
+      final hits = _countFloodHits(candidate.polyline);
+      print('   💧 Flood hits: $hits (current best: $bestHits)');
+
+      if (hits < bestHits) {
+        bestHits = hits;
+        best = candidate;
+        print('   ✅ New best route!');
+        if (hits == 0) {
+          print('   🎉 Perfect route with 0 hits!');
+          break;
+        }
       }
     }
-  }
 
-  if (best != null) {
-    print('✅ Found detour route with $bestHits flood hits (was $currentHits)');
-  } else {
-    print('❌ No valid detour found after testing $testedCount waypoints');
-  }
+    if (best != null) {
+      print(
+        '✅ Found detour route with $bestHits flood hits (was $currentHits)',
+      );
+    } else {
+      print('❌ No valid detour found after testing $testedCount waypoints');
+    }
 
-  return best;
-}
+    return best;
+  }
 
   LatLng? _firstFloodHotspotOnRoute(List<LatLng> route) {
     if (route.isEmpty || _floodPoints.isEmpty) return null;
@@ -2379,110 +2361,128 @@ Future<RouteFetchResult?> _buildDetourAvoidanceRoute({
     return seeds;
   }
 
- List<LatLng> _buildSmartDetourWaypoints(LatLng floodCenter, List<LatLng> baseRoute) {
-  // Find where the flood zone is on the route
-  int floodZoneStartIdx = -1;
-  int floodZoneEndIdx = -1;
-  
-  for (int i = 0; i < baseRoute.length; i++) {
-    final p = baseRoute[i];
-    final dist = Geolocator.distanceBetween(
-      p.latitude,
-      p.longitude,
-      floodCenter.latitude,
-      floodCenter.longitude,
-    );
-    
-    if (dist <= _floodHitDistanceMeters * 2) {
-      if (floodZoneStartIdx == -1) {
-        floodZoneStartIdx = i;
+  List<LatLng> _buildSmartDetourWaypoints(
+    LatLng floodCenter,
+    List<LatLng> baseRoute,
+  ) {
+    // Find where the flood zone is on the route
+    int floodZoneStartIdx = -1;
+    int floodZoneEndIdx = -1;
+
+    for (int i = 0; i < baseRoute.length; i++) {
+      final p = baseRoute[i];
+      final dist = Geolocator.distanceBetween(
+        p.latitude,
+        p.longitude,
+        floodCenter.latitude,
+        floodCenter.longitude,
+      );
+
+      if (dist <= _floodHitDistanceMeters * 2) {
+        if (floodZoneStartIdx == -1) {
+          floodZoneStartIdx = i;
+        }
+        floodZoneEndIdx = i;
       }
-      floodZoneEndIdx = i;
     }
-  }
-  
-  if (floodZoneStartIdx == -1 || floodZoneEndIdx == -1) {
-    // Fallback to original detour seeds but farther away
-    return _buildFarDetourSeeds(floodCenter);
-  }
-  
-  // Get a point before the flood zone
-  final beforeIdx = math.max(0, floodZoneStartIdx - 15);
-  final beforePoint = baseRoute[beforeIdx];
-  
-  // Create perpendicular detour points from the "before" position
-  final bearing = _bearingBetween(beforePoint, floodCenter);
-  
-  // Create waypoints at 90° angles (left and right of the flood)
-  // Use LARGER distances to avoid flood zones
-  final waypoints = <LatLng>[];
-  
-  // Left detour (bearing - 90°) - farther distances
-  final leftBearing = (bearing - 90 + 360) % 360;
-  waypoints.add(_offsetByBearing(floodCenter, leftBearing, 400)); // increased from 200
-  waypoints.add(_offsetByBearing(floodCenter, leftBearing, 600)); // increased from 350
-  waypoints.add(_offsetByBearing(floodCenter, leftBearing, 800)); // new
-  
-  // Right detour (bearing + 90°) - farther distances
-  final rightBearing = (bearing + 90) % 360;
-  waypoints.add(_offsetByBearing(floodCenter, rightBearing, 400)); // increased from 200
-  waypoints.add(_offsetByBearing(floodCenter, rightBearing, 600)); // increased from 350
-  waypoints.add(_offsetByBearing(floodCenter, rightBearing, 800)); // new
-  
-  return waypoints;
-}
-List<LatLng> _buildFarDetourSeeds(LatLng center) {
-  // Farther detour points in all directions
-  const offsets = <Offset>[
-    Offset(400, 0),    // East
-    Offset(-400, 0),   // West
-    Offset(0, 400),    // North
-    Offset(0, -400),   // South
-    Offset(600, 0),    // Far East
-    Offset(-600, 0),   // Far West
-    Offset(0, 600),    // Far North
-    Offset(0, -600),   // Far South
-    Offset(400, 400),  // NE
-    Offset(-400, 400), // NW
-    Offset(400, -400), // SE
-    Offset(-400, -400),// SW
-  ];
 
-  final seeds = <LatLng>[];
-  final seen = <String>{};
-  for (final off in offsets) {
-    final seed = _offsetLatLngByMeters(
-      center,
-      northMeters: off.dy,
-      eastMeters: off.dx,
+    if (floodZoneStartIdx == -1 || floodZoneEndIdx == -1) {
+      // Fallback to original detour seeds but farther away
+      return _buildFarDetourSeeds(floodCenter);
+    }
+
+    // Get a point before the flood zone
+    final beforeIdx = math.max(0, floodZoneStartIdx - 15);
+    final beforePoint = baseRoute[beforeIdx];
+
+    // Create perpendicular detour points from the "before" position
+    final bearing = _bearingBetween(beforePoint, floodCenter);
+
+    // Create waypoints at 90° angles (left and right of the flood)
+    // Use LARGER distances to avoid flood zones
+    final waypoints = <LatLng>[];
+
+    // Left detour (bearing - 90°) - farther distances
+    final leftBearing = (bearing - 90 + 360) % 360;
+    waypoints.add(
+      _offsetByBearing(floodCenter, leftBearing, 400),
+    ); // increased from 200
+    waypoints.add(
+      _offsetByBearing(floodCenter, leftBearing, 600),
+    ); // increased from 350
+    waypoints.add(_offsetByBearing(floodCenter, leftBearing, 800)); // new
+
+    // Right detour (bearing + 90°) - farther distances
+    final rightBearing = (bearing + 90) % 360;
+    waypoints.add(
+      _offsetByBearing(floodCenter, rightBearing, 400),
+    ); // increased from 200
+    waypoints.add(
+      _offsetByBearing(floodCenter, rightBearing, 600),
+    ); // increased from 350
+    waypoints.add(_offsetByBearing(floodCenter, rightBearing, 800)); // new
+
+    return waypoints;
+  }
+
+  List<LatLng> _buildFarDetourSeeds(LatLng center) {
+    // Farther detour points in all directions
+    const offsets = <Offset>[
+      Offset(400, 0), // East
+      Offset(-400, 0), // West
+      Offset(0, 400), // North
+      Offset(0, -400), // South
+      Offset(600, 0), // Far East
+      Offset(-600, 0), // Far West
+      Offset(0, 600), // Far North
+      Offset(0, -600), // Far South
+      Offset(400, 400), // NE
+      Offset(-400, 400), // NW
+      Offset(400, -400), // SE
+      Offset(-400, -400), // SW
+    ];
+
+    final seeds = <LatLng>[];
+    final seen = <String>{};
+    for (final off in offsets) {
+      final seed = _offsetLatLngByMeters(
+        center,
+        northMeters: off.dy,
+        eastMeters: off.dx,
+      );
+      final key =
+          '${seed.latitude.toStringAsFixed(6)},${seed.longitude.toStringAsFixed(6)}';
+      if (seen.add(key)) {
+        seeds.add(seed);
+      }
+    }
+    return seeds;
+  }
+
+  LatLng _offsetByBearing(LatLng start, double bearing, double distanceMeters) {
+    const earthRadius = 6371000.0; // meters
+    final lat1 = start.latitude * math.pi / 180;
+    final lon1 = start.longitude * math.pi / 180;
+    final bearingRad = bearing * math.pi / 180;
+
+    final lat2 = math.asin(
+      math.sin(lat1) * math.cos(distanceMeters / earthRadius) +
+          math.cos(lat1) *
+              math.sin(distanceMeters / earthRadius) *
+              math.cos(bearingRad),
     );
-    final key =
-        '${seed.latitude.toStringAsFixed(6)},${seed.longitude.toStringAsFixed(6)}';
-    if (seen.add(key)) {
-      seeds.add(seed);
-    }
-  }
-  return seeds;
-}
 
-LatLng _offsetByBearing(LatLng start, double bearing, double distanceMeters) {
-  const earthRadius = 6371000.0; // meters
-  final lat1 = start.latitude * math.pi / 180;
-  final lon1 = start.longitude * math.pi / 180;
-  final bearingRad = bearing * math.pi / 180;
-  
-  final lat2 = math.asin(
-    math.sin(lat1) * math.cos(distanceMeters / earthRadius) +
-    math.cos(lat1) * math.sin(distanceMeters / earthRadius) * math.cos(bearingRad)
-  );
-  
-  final lon2 = lon1 + math.atan2(
-    math.sin(bearingRad) * math.sin(distanceMeters / earthRadius) * math.cos(lat1),
-    math.cos(distanceMeters / earthRadius) - math.sin(lat1) * math.sin(lat2)
-  );
-  
-  return LatLng(lat2 * 180 / math.pi, lon2 * 180 / math.pi);
-}
+    final lon2 = lon1 +
+        math.atan2(
+          math.sin(bearingRad) *
+              math.sin(distanceMeters / earthRadius) *
+              math.cos(lat1),
+          math.cos(distanceMeters / earthRadius) -
+              math.sin(lat1) * math.sin(lat2),
+        );
+
+    return LatLng(lat2 * 180 / math.pi, lon2 * 180 / math.pi);
+  }
 
   LatLng _offsetLatLngByMeters(
     LatLng base, {
@@ -2544,7 +2544,7 @@ LatLng _offsetByBearing(LatLng start, double bearing, double distanceMeters) {
             final coords = geometry['coordinates'];
             final zoneType =
                 _normalizePedestrianZoneType(properties?['zone_type']) ??
-                'pedestrians';
+                    'pedestrians';
 
             if (type == 'Point' && coords is List && coords.length >= 2) {
               final lon = (coords[0] as num?)?.toDouble();
@@ -2576,90 +2576,94 @@ LatLng _offsetByBearing(LatLng start, double bearing, double distanceMeters) {
     }
   }
 
-void _updateNavigationZoneFlags() {
-  if (!_isNavigating || _currentLocation == null) {
-    if (_inPedestrianZone ||
-        _activePedestrianZoneType != null ||
-        _inNoOvertakingZone) {
+  void _updateNavigationZoneFlags() {
+    if (!_isNavigating || _currentLocation == null) {
+      if (_inPedestrianZone ||
+          _activePedestrianZoneType != null ||
+          _inNoOvertakingZone) {
+        setState(() {
+          _inPedestrianZone = false;
+          _activePedestrianZoneType = null;
+          _inNoOvertakingZone = false;
+        });
+      }
+      return;
+    }
+
+    final current = _currentLocation!;
+
+    // 👇 ADD THIS DEBUG LOGGING
+    print('📍 Current location: ${current.latitude}, ${current.longitude}');
+    print('🚶 Pedestrian zones loaded: ${_pedestrianZonePoints.length}');
+    print('🚫 No overtaking zones loaded: ${_noOvertakingZonePoints.length}');
+
+    // Check closest pedestrian zone
+    if (_pedestrianZonePoints.isNotEmpty) {
+      double? closestDist;
+      for (final zone in _pedestrianZonePoints) {
+        final d = Geolocator.distanceBetween(
+          current.latitude,
+          current.longitude,
+          zone.location.latitude,
+          zone.location.longitude,
+        );
+        if (closestDist == null || d < closestDist) {
+          closestDist = d;
+        }
+      }
+      print(
+        '🚶 Closest pedestrian zone: ${closestDist?.toStringAsFixed(1)}m (threshold: $_pedestrianAlertRadiusMeters m)',
+      );
+    }
+
+    // Check closest no-overtaking zone
+    if (_noOvertakingZonePoints.isNotEmpty) {
+      double? closestDist;
+      for (final zone in _noOvertakingZonePoints) {
+        final d = Geolocator.distanceBetween(
+          current.latitude,
+          current.longitude,
+          zone.latitude,
+          zone.longitude,
+        );
+        if (closestDist == null || d < closestDist) {
+          closestDist = d;
+        }
+      }
+      print(
+        '🚫 Closest no-overtaking zone: ${closestDist?.toStringAsFixed(1)}m (threshold: $_noOvertakingAlertRadiusMeters m)',
+      );
+    }
+
+    final activePedestrianZoneType = _findActivePedestrianZoneType(
+      current,
+      _pedestrianAlertRadiusMeters,
+    );
+    final inPedestrian = activePedestrianZoneType != null;
+    final inNoOvertaking = _isNearAnyZonePoint(
+      current,
+      _noOvertakingZonePoints,
+      _noOvertakingAlertRadiusMeters,
+    );
+
+    // 👇 ADD THIS TOO
+    if (inPedestrian) {
+      print('✅ IN PEDESTRIAN ZONE: $activePedestrianZoneType');
+    }
+    if (inNoOvertaking) {
+      print('✅ IN NO OVERTAKING ZONE');
+    }
+
+    if (inPedestrian != _inPedestrianZone ||
+        activePedestrianZoneType != _activePedestrianZoneType ||
+        inNoOvertaking != _inNoOvertakingZone) {
       setState(() {
-        _inPedestrianZone = false;
-        _activePedestrianZoneType = null;
-        _inNoOvertakingZone = false;
+        _inPedestrianZone = inPedestrian;
+        _activePedestrianZoneType = activePedestrianZoneType;
+        _inNoOvertakingZone = inNoOvertaking;
       });
     }
-    return;
   }
-
-  final current = _currentLocation!;
-  
-  // 👇 ADD THIS DEBUG LOGGING
-  print('📍 Current location: ${current.latitude}, ${current.longitude}');
-  print('🚶 Pedestrian zones loaded: ${_pedestrianZonePoints.length}');
-  print('🚫 No overtaking zones loaded: ${_noOvertakingZonePoints.length}');
-  
-  // Check closest pedestrian zone
-  if (_pedestrianZonePoints.isNotEmpty) {
-    double? closestDist;
-    for (final zone in _pedestrianZonePoints) {
-      final d = Geolocator.distanceBetween(
-        current.latitude,
-        current.longitude,
-        zone.location.latitude,
-        zone.location.longitude,
-      );
-      if (closestDist == null || d < closestDist) {
-        closestDist = d;
-      }
-    }
-    print('🚶 Closest pedestrian zone: ${closestDist?.toStringAsFixed(1)}m (threshold: $_pedestrianAlertRadiusMeters m)');
-  }
-  
-  // Check closest no-overtaking zone
-  if (_noOvertakingZonePoints.isNotEmpty) {
-    double? closestDist;
-    for (final zone in _noOvertakingZonePoints) {
-      final d = Geolocator.distanceBetween(
-        current.latitude,
-        current.longitude,
-        zone.latitude,
-        zone.longitude,
-      );
-      if (closestDist == null || d < closestDist) {
-        closestDist = d;
-      }
-    }
-    print('🚫 Closest no-overtaking zone: ${closestDist?.toStringAsFixed(1)}m (threshold: $_noOvertakingAlertRadiusMeters m)');
-  }
-  
-  final activePedestrianZoneType = _findActivePedestrianZoneType(
-    current,
-    _pedestrianAlertRadiusMeters,
-  );
-  final inPedestrian = activePedestrianZoneType != null;
-  final inNoOvertaking = _isNearAnyZonePoint(
-    current,
-    _noOvertakingZonePoints,
-    _noOvertakingAlertRadiusMeters,
-  );
-
-  // 👇 ADD THIS TOO
-  if (inPedestrian) {
-    print('✅ IN PEDESTRIAN ZONE: $activePedestrianZoneType');
-  }
-  if (inNoOvertaking) {
-    print('✅ IN NO OVERTAKING ZONE');
-  }
-
-  if (inPedestrian != _inPedestrianZone ||
-      activePedestrianZoneType != _activePedestrianZoneType ||
-      inNoOvertaking != _inNoOvertakingZone) {
-    setState(() {
-      _inPedestrianZone = inPedestrian;
-      _activePedestrianZoneType = activePedestrianZoneType;
-      _inNoOvertakingZone = inNoOvertaking;
-    });
-  }
-}
 
   String? _findActivePedestrianZoneType(
     LatLng current,
@@ -2668,8 +2672,8 @@ void _updateNavigationZoneFlags() {
     if (_pedestrianZonePoints.isEmpty) return null;
 
     final latPad = thresholdMeters / 111320.0;
-    final lonPad =
-        thresholdMeters / (111320.0 * math.cos(current.latitude * math.pi / 180));
+    final lonPad = thresholdMeters /
+        (111320.0 * math.cos(current.latitude * math.pi / 180));
     double? bestDistance;
     String? bestZoneType;
 
@@ -2715,8 +2719,8 @@ void _updateNavigationZoneFlags() {
     if (zonePoints.isEmpty) return false;
 
     final latPad = thresholdMeters / 111320.0;
-    final lonPad =
-        thresholdMeters / (111320.0 * math.cos(current.latitude * math.pi / 180));
+    final lonPad = thresholdMeters /
+        (111320.0 * math.cos(current.latitude * math.pi / 180));
 
     for (final zone in zonePoints) {
       if ((zone.latitude - current.latitude).abs() > latPad) continue;
@@ -2842,8 +2846,6 @@ void _updateNavigationZoneFlags() {
         }
       }
     }
-
-    
   }
 
   // ================= NAVIGATION PROGRESS =================
@@ -2897,7 +2899,8 @@ void _updateNavigationZoneFlags() {
     final reached = distance <= _stepAdvanceDistanceMeters;
     final likelyPassed = _distanceIncreasingCount >= 3;
 
-    if ((reached || likelyPassed) && _currentStepIndex < _routeSteps.length - 1) {
+    if ((reached || likelyPassed) &&
+        _currentStepIndex < _routeSteps.length - 1) {
       _currentStepIndex += 1;
       _distanceIncreasingCount = 0;
       _prevStepDistance = null;
@@ -2917,7 +2920,7 @@ void _updateNavigationZoneFlags() {
 
     final now = DateTime.now();
     final timestamp = sample.timestamp;
-    if (timestamp != null && now.difference(timestamp).abs() > _maxAcceptedGpsAge) {
+    if (now.difference(timestamp).abs() > _maxAcceptedGpsAge) {
       return false;
     }
 
@@ -2930,8 +2933,9 @@ void _updateNavigationZoneFlags() {
       );
       final prevTs = last.timestamp;
       final currTs = sample.timestamp;
-      if (prevTs != null && currTs != null) {
-        final dtMs = currTs.millisecondsSinceEpoch - prevTs.millisecondsSinceEpoch;
+      if (currTs != null) {
+        final dtMs =
+            currTs.millisecondsSinceEpoch - prevTs.millisecondsSinceEpoch;
         if (dtMs > 0) {
           final speedMps = meters / (dtMs / 1000.0);
           if (speedMps > _maxAcceptedSpeedMps) return false;
@@ -2945,10 +2949,10 @@ void _updateNavigationZoneFlags() {
   LatLng _smoothRawPoint(LatLng raw) {
     _smoothedLat ??= raw.latitude;
     _smoothedLng ??= raw.longitude;
-    _smoothedLat =
-        _gpsSmoothingAlpha * raw.latitude + (1 - _gpsSmoothingAlpha) * _smoothedLat!;
-    _smoothedLng =
-        _gpsSmoothingAlpha * raw.longitude + (1 - _gpsSmoothingAlpha) * _smoothedLng!;
+    _smoothedLat = _gpsSmoothingAlpha * raw.latitude +
+        (1 - _gpsSmoothingAlpha) * _smoothedLat!;
+    _smoothedLng = _gpsSmoothingAlpha * raw.longitude +
+        (1 - _gpsSmoothingAlpha) * _smoothedLng!;
     return LatLng(_smoothedLat!, _smoothedLng!);
   }
 
@@ -2979,8 +2983,8 @@ void _updateNavigationZoneFlags() {
 
   _SegmentProjection _projectPointOnSegment(LatLng p, LatLng a, LatLng b) {
     const latMeters = 111320.0;
-    final refLat = ((p.latitude + a.latitude + b.latitude) / 3.0) *
-        (math.pi / 180.0);
+    final refLat =
+        ((p.latitude + a.latitude + b.latitude) / 3.0) * (math.pi / 180.0);
     final lngMeters = latMeters * math.cos(refLat).abs();
 
     final px = p.longitude * lngMeters;
@@ -3012,10 +3016,7 @@ void _updateNavigationZoneFlags() {
       lngMeters > 0 ? (projX / lngMeters) : p.longitude,
     );
 
-    return _SegmentProjection(
-      point: point,
-      distanceMeters: distanceMeters,
-    );
+    return _SegmentProjection(point: point, distanceMeters: distanceMeters);
   }
 
   int _advanceRouteIndexByMeters(int startIdx, double aheadMeters) {
@@ -3046,8 +3047,10 @@ void _updateNavigationZoneFlags() {
     if (_isNavigating) {
       final baseIdx =
           _routeProgressIdx.clamp(0, _routePolyline.length - 2).toInt();
-      final trimIdx =
-          _advanceRouteIndexByMeters(baseIdx, _navigationTrimLeadMeters);
+      final trimIdx = _advanceRouteIndexByMeters(
+        baseIdx,
+        _navigationTrimLeadMeters,
+      );
       if (trimIdx > _routeTrimStartIdx &&
           _routePolyline.length - trimIdx >= 2) {
         setState(() {
@@ -3118,21 +3121,11 @@ void _updateNavigationZoneFlags() {
     }
     if (_isNavigating) {
       unawaited(
-        _moveCameraTo(
-          followTarget,
-          zoom,
-          tilt: 60,
-          bearing: routeBearing,
-        ),
+        _moveCameraTo(followTarget, zoom, tilt: 60, bearing: routeBearing),
       );
     } else {
       unawaited(
-        _animateCameraTo(
-          followTarget,
-          zoom,
-          tilt: 0,
-          bearing: routeBearing,
-        ),
+        _animateCameraTo(followTarget, zoom, tilt: 0, bearing: routeBearing),
       );
     }
   }
@@ -3197,8 +3190,9 @@ void _updateNavigationZoneFlags() {
 
     final speedMps = _currentSpeedMps ?? 0;
     final headingBearing = _normalizeBearing(_currentHeading);
-    final stableHeading =
-        (speedMps < 2.0 && _visualBearing != null) ? _visualBearing! : headingBearing;
+    final stableHeading = (speedMps < 2.0 && _visualBearing != null)
+        ? _visualBearing!
+        : headingBearing;
 
     double targetBearing = stableHeading;
 
@@ -3223,7 +3217,8 @@ void _updateNavigationZoneFlags() {
           targetBearing = polyBearing;
         }
       }
-    } else if (_routeSteps.isNotEmpty && _currentStepIndex < _routeSteps.length) {
+    } else if (_routeSteps.isNotEmpty &&
+        _currentStepIndex < _routeSteps.length) {
       targetBearing = _bearingBetween(
         currentForBearing,
         _routeSteps[_currentStepIndex].location,
@@ -3233,8 +3228,12 @@ void _updateNavigationZoneFlags() {
     // Smooth rotation to avoid abrupt/early camera-icon turning.
     final currentVisual = _visualBearing ?? targetBearing;
     double maxTurnPerUpdate = _isNavigating ? 3.0 : 12.0;
-    if (_isNavigating && _distanceToNextStepMeters <= 22) maxTurnPerUpdate = 5.0;
-    if (_isNavigating && _distanceToNextStepMeters <= 10) maxTurnPerUpdate = 7.0;
+    if (_isNavigating && _distanceToNextStepMeters <= 22) {
+      maxTurnPerUpdate = 5.0;
+    }
+    if (_isNavigating && _distanceToNextStepMeters <= 10) {
+      maxTurnPerUpdate = 7.0;
+    }
     if (_isNavigating && speedMps < 1.5) maxTurnPerUpdate = 2.0;
     final delta = _shortestAngleDelta(currentVisual, targetBearing);
     final appliedDelta = delta.clamp(-maxTurnPerUpdate, maxTurnPerUpdate);
@@ -3452,7 +3451,8 @@ void _updateNavigationZoneFlags() {
         // does not immediately issue a hard moveCamera jump.
         await Future<void>.delayed(const Duration(milliseconds: 450));
         if (!mounted) return;
-        final catchupTarget = _displayRawLocation ?? _currentLocation ?? _rawLocation;
+        final catchupTarget =
+            _displayRawLocation ?? _currentLocation ?? _rawLocation;
         if (catchupTarget != null) {
           await _animateCameraTo(
             catchupTarget,
@@ -3511,7 +3511,8 @@ void _updateNavigationZoneFlags() {
       return;
     }
     if (_dismissedAlertType == type) return;
-    if (_autoCloseScheduledFor == type && _alertAutoCloseTimer?.isActive == true) {
+    if (_autoCloseScheduledFor == type &&
+        _alertAutoCloseTimer?.isActive == true) {
       return;
     }
 
@@ -3557,7 +3558,7 @@ void _updateNavigationZoneFlags() {
 
     if (_lastSpokenAlertType == currentType) return;
     _lastSpokenAlertType = currentType;
-    _voiceAlertService.announceSafetyAlert(currentType!);
+    _voiceAlertService.announceSafetyAlert(currentType);
   }
 
   Future<void> _loadRiderFullName() async {
@@ -3610,8 +3611,7 @@ void _updateNavigationZoneFlags() {
   }
 
   Future<void> _logFloodAffectedRerouteEvent() async {
-    final point =
-        _currentLocation ??
+    final point = _currentLocation ??
         _rawLocation ??
         (_routePolyline.isNotEmpty ? _routePolyline.first : null);
     final now = DateTime.now();
@@ -3652,17 +3652,16 @@ void _updateNavigationZoneFlags() {
         : (_destinations.isNotEmpty
             ? _destinations.first.durationMinutes
             : null);
-    final speedKmh = _currentSpeedMps != null
-        ? (_currentSpeedMps! * 3.6).round()
-        : null;
+    final speedKmh =
+        _currentSpeedMps != null ? (_currentSpeedMps! * 3.6).round() : null;
     final displaySpeedKmh =
         (speedKmh != null && speedKmh >= 8) ? speedKmh : null;
     final activeAlertType = _currentNavigationAlertType();
-    final shouldShowAlert = activeAlertType != null &&
-        activeAlertType != _dismissedAlertType;
+    final shouldShowAlert =
+        activeAlertType != null && activeAlertType != _dismissedAlertType;
     if (shouldShowAlert) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || activeAlertType == null) return;
+        if (!mounted) return;
         _scheduleAlertAutoClose(activeAlertType);
       });
     } else {
@@ -3690,8 +3689,7 @@ void _updateNavigationZoneFlags() {
         ),
 
       // Use animated, snapped navigation point for stable road-locked UI.
-      if (_isNavigating &&
-          (_displayRawLocation ?? _currentLocation) != null)
+      if (_isNavigating && (_displayRawLocation ?? _currentLocation) != null)
         gmaps.Marker(
           markerId: const gmaps.MarkerId('nav_arrow'),
           position: gmaps.LatLng(
@@ -3710,17 +3708,15 @@ void _updateNavigationZoneFlags() {
       if (_mapTypeSelection == 'weather') ..._weatherMarkers,
     };
 
-    final visibleRoute = _routeTrimStartIdx > 0 &&
-            _routeTrimStartIdx < _routePolyline.length - 1
-        ? _routePolyline.sublist(_routeTrimStartIdx)
-        : _routePolyline;
-    var routePoints = visibleRoute
-        .map((p) => gmaps.LatLng(p.latitude, p.longitude))
-        .toList();
+    final visibleRoute =
+        _routeTrimStartIdx > 0 && _routeTrimStartIdx < _routePolyline.length - 1
+            ? _routePolyline.sublist(_routeTrimStartIdx)
+            : _routePolyline;
+    var routePoints =
+        visibleRoute.map((p) => gmaps.LatLng(p.latitude, p.longitude)).toList();
     // Keep trim visually locked to the navigator arrow position.
-    final navHead = _isNavigating
-        ? (_displayRawLocation ?? _currentLocation)
-        : null;
+    final navHead =
+        _isNavigating ? (_displayRawLocation ?? _currentLocation) : null;
     if (navHead != null) {
       routePoints = [
         gmaps.LatLng(navHead.latitude, navHead.longitude),
@@ -3823,10 +3819,7 @@ void _updateNavigationZoneFlags() {
                   gradient: const LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [
-                      Color(0xFFFF0000),
-                      Color(0xFF800000),
-                    ],
+                    colors: [Color(0xFFFF0000), Color(0xFF800000)],
                     stops: [0.0, 1.0],
                   ),
                   borderRadius: BorderRadius.circular(30),
@@ -3849,11 +3842,7 @@ void _updateNavigationZoneFlags() {
                     ),
                     child: Row(
                       children: [
-                        const Icon(
-                          Icons.search,
-                          color: Colors.white,
-                          size: 28,
-                        ),
+                        const Icon(Icons.search, color: Colors.white, size: 28),
                         const SizedBox(width: 16),
                         const Text(
                           'Search destination...',
@@ -3883,10 +3872,7 @@ void _updateNavigationZoneFlags() {
                   gradient: const LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [
-                      Color(0xFFFF0000),
-                      Color(0xFF800000),
-                    ],
+                    colors: [Color(0xFFFF0000), Color(0xFF800000)],
                     stops: [0.0, 1.0],
                   ),
                   boxShadow: [
@@ -3942,10 +3928,7 @@ void _updateNavigationZoneFlags() {
                   gradient: const LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [
-                      Color(0xFFFF0000),
-                      Color(0xFF800000),
-                    ],
+                    colors: [Color(0xFFFF0000), Color(0xFF800000)],
                     stops: [0.0, 1.0],
                   ),
                   borderRadius: BorderRadius.circular(28),
@@ -3967,10 +3950,7 @@ void _updateNavigationZoneFlags() {
                   },
                   backgroundColor: Colors.transparent,
                   elevation: 0,
-                  child: Icon(
-                    Icons.my_location,
-                    color: Colors.white,
-                  ),
+                  child: Icon(Icons.my_location, color: Colors.white),
                 ),
               ),
             ),
@@ -3985,10 +3965,7 @@ void _updateNavigationZoneFlags() {
                   gradient: const LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [
-                      Color(0xFFFF0000),
-                      Color(0xFF800000),
-                    ],
+                    colors: [Color(0xFFFF0000), Color(0xFF800000)],
                     stops: [0.0, 1.0],
                   ),
                   borderRadius: BorderRadius.circular(28),
@@ -4006,10 +3983,7 @@ void _updateNavigationZoneFlags() {
                   onPressed: _showMapTypeSheet,
                   backgroundColor: Colors.transparent,
                   elevation: 0,
-                  child: const Icon(
-                    Icons.layers,
-                    color: Colors.white,
-                  ),
+                  child: const Icon(Icons.layers, color: Colors.white),
                 ),
               ),
             ),
@@ -4026,10 +4000,7 @@ void _updateNavigationZoneFlags() {
                   gradient: const LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [
-                      Color(0xFFFF0000),
-                      Color(0xFF800000),
-                    ],
+                    colors: [Color(0xFFFF0000), Color(0xFF800000)],
                     stops: [0.0, 1.0],
                   ),
                   borderRadius: BorderRadius.circular(28),
@@ -4076,10 +4047,7 @@ void _updateNavigationZoneFlags() {
                   gradient: const LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [
-                      Color(0xFFFF0000),
-                      Color(0xFF800000),
-                    ],
+                    colors: [Color(0xFFFF0000), Color(0xFF800000)],
                     stops: [0.0, 1.0],
                   ),
                   borderRadius: BorderRadius.circular(28),
@@ -4101,10 +4069,7 @@ void _updateNavigationZoneFlags() {
                   },
                   backgroundColor: Colors.transparent,
                   elevation: 0,
-                  child: Icon(
-                    Icons.my_location,
-                    color: Colors.white,
-                  ),
+                  child: Icon(Icons.my_location, color: Colors.white),
                 ),
               ),
             ),
@@ -4119,10 +4084,7 @@ void _updateNavigationZoneFlags() {
                   gradient: const LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [
-                      Color(0xFFFF0000),
-                      Color(0xFF800000),
-                    ],
+                    colors: [Color(0xFFFF0000), Color(0xFF800000)],
                     stops: [0.0, 1.0],
                   ),
                   borderRadius: BorderRadius.circular(28),
@@ -4140,10 +4102,7 @@ void _updateNavigationZoneFlags() {
                   onPressed: _showMapTypeSheet,
                   backgroundColor: Colors.transparent,
                   elevation: 0,
-                  child: const Icon(
-                    Icons.layers,
-                    color: Colors.white,
-                  ),
+                  child: const Icon(Icons.layers, color: Colors.white),
                 ),
               ),
             ),
@@ -4163,10 +4122,7 @@ void _updateNavigationZoneFlags() {
                       gradient: const LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
-                        colors: [
-                          Color(0xFFFF0000),
-                          Color(0xFF800000),
-                        ],
+                        colors: [Color(0xFFFF0000), Color(0xFF800000)],
                         stops: [0.0, 1.0],
                       ),
                       borderRadius: BorderRadius.circular(20),
@@ -4224,7 +4180,8 @@ void _updateNavigationZoneFlags() {
                                 children: [
                                   Expanded(
                                     child: DestinationCard(
-                                      destinationName: _destinations[index].name,
+                                      destinationName:
+                                          _destinations[index].name,
                                       destinationNumber: index + 1,
                                       onRemove: () => _removeDestination(index),
                                     ),
@@ -4250,10 +4207,7 @@ void _updateNavigationZoneFlags() {
                           gradient: const LinearGradient(
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
-                            colors: [
-                              Color(0xFFFF0000),
-                              Color(0xFF800000),
-                            ],
+                            colors: [Color(0xFFFF0000), Color(0xFF800000)],
                             stops: [0.0, 1.0],
                           ),
                           borderRadius: BorderRadius.circular(50),
@@ -4282,10 +4236,7 @@ void _updateNavigationZoneFlags() {
                         gradient: const LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
-                          colors: [
-                            Color(0xFFFF0000),
-                            Color(0xFF800000),
-                          ],
+                          colors: [Color(0xFFFF0000), Color(0xFF800000)],
                           stops: [0.0, 1.0],
                         ),
                         borderRadius: BorderRadius.circular(28),
@@ -4307,10 +4258,7 @@ void _updateNavigationZoneFlags() {
                         },
                         backgroundColor: Colors.transparent,
                         elevation: 0,
-                        child: Icon(
-                          Icons.my_location,
-                          color: Colors.white,
-                        ),
+                        child: Icon(Icons.my_location, color: Colors.white),
                       ),
                     ),
                   ),
@@ -4322,10 +4270,7 @@ void _updateNavigationZoneFlags() {
                         gradient: const LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
-                          colors: [
-                            Color(0xFFFF0000),
-                            Color(0xFF800000),
-                          ],
+                          colors: [Color(0xFFFF0000), Color(0xFF800000)],
                           stops: [0.0, 1.0],
                         ),
                         borderRadius: BorderRadius.circular(28),
@@ -4343,10 +4288,7 @@ void _updateNavigationZoneFlags() {
                         onPressed: _showMapTypeSheet,
                         backgroundColor: Colors.transparent,
                         elevation: 0,
-                        child: const Icon(
-                          Icons.layers,
-                          color: Colors.white,
-                        ),
+                        child: const Icon(Icons.layers, color: Colors.white),
                       ),
                     ),
                   ),
@@ -4411,16 +4353,21 @@ void _updateNavigationZoneFlags() {
                                       ],
                                       stops: [0.0, 1.0],
                                     ),
-                                    borderRadius:
-                                        BorderRadius.all(Radius.circular(30)),
+                                    borderRadius: BorderRadius.all(
+                                      Radius.circular(30),
+                                    ),
                                   ),
                                   child: const Padding(
                                     padding: EdgeInsets.symmetric(vertical: 16),
                                     child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
                                       children: [
-                                        Icon(Icons.navigation,
-                                            color: Colors.white, size: 24),
+                                        Icon(
+                                          Icons.navigation,
+                                          color: Colors.white,
+                                          size: 24,
+                                        ),
                                         SizedBox(width: 12),
                                         Text(
                                           'START NAVIGATION',
@@ -4449,10 +4396,7 @@ void _updateNavigationZoneFlags() {
               left: 10,
               right: 10,
               bottom: 80,
-              child: AlertCard(
-                type: activeAlertType!,
-                onClose: null,
-              ),
+              child: AlertCard(type: activeAlertType, onClose: null),
             ),
           Positioned(
             left: 14,
@@ -4463,9 +4407,8 @@ void _updateNavigationZoneFlags() {
               child: AnimatedSlide(
                 duration: const Duration(milliseconds: 260),
                 curve: Curves.easeOutCubic,
-                offset: _showRouteUpdateBanner
-                    ? Offset.zero
-                    : const Offset(0, 1),
+                offset:
+                    _showRouteUpdateBanner ? Offset.zero : const Offset(0, 1),
                 child: AnimatedOpacity(
                   duration: const Duration(milliseconds: 220),
                   curve: Curves.easeOut,
@@ -4541,9 +4484,7 @@ void _updateNavigationZoneFlags() {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: const [
-                        CircularProgressIndicator(
-                          color: Color(0xFFD40000),
-                        ),
+                        CircularProgressIndicator(color: Color(0xFFD40000)),
                         SizedBox(height: 14),
                         Text(
                           'Computing the distance and route',
@@ -4558,10 +4499,7 @@ void _updateNavigationZoneFlags() {
                         Text(
                           'Please wait.',
                           textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.black54,
-                          ),
+                          style: TextStyle(fontSize: 14, color: Colors.black54),
                         ),
                       ],
                     ),
@@ -4569,52 +4507,47 @@ void _updateNavigationZoneFlags() {
                 ),
               ),
             ),
-            if (_isFloodRerouteCalculating)
-  Positioned.fill(
-    child: Container(
-      color: Colors.black45,
-      child: Center(
-        child: Container(
-          width: 320,
-          padding: const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 18,
-          ),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: const [
-              CircularProgressIndicator(
-                color: Color(0xFFD40000),
-              ),
-              SizedBox(height: 14),
-              Text(
-                'Finding flood-safe route',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
+          if (_isFloodRerouteCalculating)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black45,
+                child: Center(
+                  child: Container(
+                    width: 320,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 18,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        CircularProgressIndicator(color: Color(0xFFD40000)),
+                        SizedBox(height: 14),
+                        Text(
+                          'Finding flood-safe route',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        SizedBox(height: 6),
+                        Text(
+                          'Analyzing alternatives...',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 14, color: Colors.black54),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-              SizedBox(height: 6),
-              Text(
-                'Analyzing alternatives...',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.black54,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    ),
-  ),
+            ),
         ],
       ),
 
@@ -4622,21 +4555,17 @@ void _updateNavigationZoneFlags() {
       bottomNavigationBar: _isNavigating
           ? Container(
               height: 72,
-              decoration: BoxDecoration(
-                boxShadow: [],
-              ),
+              decoration: BoxDecoration(boxShadow: []),
               child: ClipRRect(
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(30)),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(30),
+                ),
                 child: Container(
                   decoration: const BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
-                      colors: [
-                        Color(0xFFFF0000),
-                        Color(0xFF800000),
-                      ],
+                      colors: [Color(0xFFFF0000), Color(0xFF800000)],
                       stops: [0.0, 1.0],
                     ),
                   ),
@@ -4677,7 +4606,9 @@ void _updateNavigationZoneFlags() {
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       Text(
-                                        etaMinutes != null ? '${etaMinutes} min' : '--',
+                                        etaMinutes != null
+                                            ? '$etaMinutes min'
+                                            : '--',
                                         style: const TextStyle(
                                           color: Colors.white,
                                           fontSize: 26,
@@ -4701,7 +4632,12 @@ void _updateNavigationZoneFlags() {
                                         ? '${formatDistance(distanceToFirstDestinationMeters)} • ${DateFormat('h:mm a').format(arrivalTime)}'
                                         : '--',
                                     style: const TextStyle(
-                                      color: ui.Color.fromARGB(190, 255, 255, 255),
+                                      color: ui.Color.fromARGB(
+                                        190,
+                                        255,
+                                        255,
+                                        255,
+                                      ),
                                       fontSize: 16,
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -4749,7 +4685,7 @@ void _updateNavigationZoneFlags() {
                       ),
                     ),
                   ),
-                    ),
+                ),
               ),
             )
           : !_hasDestination
@@ -4765,8 +4701,9 @@ void _updateNavigationZoneFlags() {
                     ],
                   ),
                   child: ClipRRect(
-                    borderRadius:
-                        const BorderRadius.vertical(top: Radius.circular(30)),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(30),
+                    ),
                     child: BottomNavigationBar(
                       type: BottomNavigationBarType.fixed,
                       backgroundColor: Colors.grey.shade200,
@@ -4776,33 +4713,39 @@ void _updateNavigationZoneFlags() {
                       onTap: _onItemTapped,
                       items: const [
                         BottomNavigationBarItem(
-                            icon: Icon(Icons.home), label: 'Home'),
-                        BottomNavigationBarItem(
-                            icon: Icon(Icons.location_on), label: 'Location'),
-                        BottomNavigationBarItem(
-                            icon: Icon(Icons.warning), label: 'Rules'),
-                        BottomNavigationBarItem(
-                            icon: Icon(Icons.local_shipping), label: 'Parcels'),
-                        BottomNavigationBarItem(
-                            icon: Icon(Icons.person), label: 'Profile'),
-                      ],
+                          icon: Icon(Icons.home),
+                          label: 'Home',
                         ),
+                        BottomNavigationBarItem(
+                          icon: Icon(Icons.location_on),
+                          label: 'Location',
+                        ),
+                        BottomNavigationBarItem(
+                          icon: Icon(Icons.warning),
+                          label: 'Rules',
+                        ),
+                        BottomNavigationBarItem(
+                          icon: Icon(Icons.local_shipping),
+                          label: 'Parcels',
+                        ),
+                        BottomNavigationBarItem(
+                          icon: Icon(Icons.person),
+                          label: 'Profile',
+                        ),
+                      ],
+                    ),
                   ),
                 )
               : null,
     );
   }
-
 }
 
 class _PedestrianZonePoint {
   final LatLng location;
   final String zoneType;
 
-  const _PedestrianZonePoint({
-    required this.location,
-    required this.zoneType,
-  });
+  const _PedestrianZonePoint({required this.location, required this.zoneType});
 }
 
 class _RouteProjection {
@@ -4821,10 +4764,7 @@ class _SegmentProjection {
   final LatLng point;
   final double distanceMeters;
 
-  const _SegmentProjection({
-    required this.point,
-    required this.distanceMeters,
-  });
+  const _SegmentProjection({required this.point, required this.distanceMeters});
 }
 
 class _FloodRenderConfig {

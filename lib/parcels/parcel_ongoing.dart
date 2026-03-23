@@ -30,7 +30,7 @@ class _ParcelOngoingPageState extends State<ParcelOngoingPage> {
 
   bool isLoadingOngoing = true;
   List<Map<String, dynamic>> ongoingParcels = [];
-  List<Map<String, dynamic>> filteredParcels = []; // bago
+  List<Map<String, dynamic>> filteredParcels = [];
 
   int attempt1Pending = 0;
   int attempt2Pending = 0;
@@ -41,8 +41,8 @@ class _ParcelOngoingPageState extends State<ParcelOngoingPage> {
   int? _selectedDestinationLimit = 1;
   List<Map<String, dynamic>> _routeCandidates = [];
 
-    String dropdownValue = "All"; // ✅ bago
-  final TextEditingController searchController = TextEditingController(); // ✅ bago
+  String dropdownValue = "All";
+  final TextEditingController searchController = TextEditingController();
 
   @override
   void initState() {
@@ -57,7 +57,15 @@ class _ParcelOngoingPageState extends State<ParcelOngoingPage> {
 
   Future<void> fetchOngoingParcels() async {
     try {
-      final response = await supabase.from('parcels').select('*');
+      // ✅ FIX: Query only this rider's on-going parcels directly
+      // Supabase has a 1000-row default limit — fetching all and filtering in
+      // Dart was silently missing parcels beyond row 1000.
+      final response = await supabase
+          .from('parcels')
+          .select('*')
+          .eq('assigned_rider_id', widget.userId)
+          .eq('status', 'on-going');
+
       final List data = response as List;
 
       List<Map<String, dynamic>> ongoing = [];
@@ -69,10 +77,6 @@ class _ParcelOngoingPageState extends State<ParcelOngoingPage> {
       for (var item in data) {
         if (item is! Map) continue;
         final row = Map<String, dynamic>.from(item);
-
-        final status = (row['status'] ?? '').toString().toLowerCase();
-        if (status != 'on-going') continue;
-        if (!_isAssignedToCurrentRider(row)) continue;
 
         String attempt1Status =
             (row['attempt1_status'] ?? '').toString().toLowerCase();
@@ -115,7 +119,7 @@ class _ParcelOngoingPageState extends State<ParcelOngoingPage> {
 
       setState(() {
         ongoingParcels = ongoing;
-        filteredParcels = ongoing; // bago
+        filteredParcels = ongoing;
         _recipientMapPoints = mapPoints;
         _routeCandidates = routeCandidates;
         _currentPage = 0;
@@ -129,38 +133,19 @@ class _ParcelOngoingPageState extends State<ParcelOngoingPage> {
     }
   }
 
-   /// ✅ Apply filters for dropdown + search
   void applyFilters() {
     setState(() {
       final searchText = searchController.text.toLowerCase();
-
       filteredParcels = ongoingParcels.where((parcel) {
         final parcelId = (parcel['parcel_id'] ?? '').toString().toLowerCase();
         final attempt = (parcel['attempt'] ?? '');
-
-        final matchesAttempt = dropdownValue == "All" || attempt == dropdownValue;
-
+        final matchesAttempt =
+            dropdownValue == "All" || attempt == dropdownValue;
         final matchesSearch = parcelId.contains(searchText);
-
         return matchesAttempt && matchesSearch;
       }).toList();
       _currentPage = 0;
     });
-  }
-
-  bool _isAssignedToCurrentRider(Map<String, dynamic> item) {
-    final riderId = widget.userId.trim();
-    final candidates = [
-      item['user_id'],
-      item['assigned_rider'],
-      item['assigned_rider_id'],
-    ];
-    for (final candidate in candidates) {
-      if (candidate != null && candidate.toString().trim() == riderId) {
-        return true;
-      }
-    }
-    return false;
   }
 
   double? _toDouble(dynamic value) {
@@ -171,7 +156,6 @@ class _ParcelOngoingPageState extends State<ParcelOngoingPage> {
 
   Future<void> _showStartDeliveryDialog() async {
     int tempSelection = _selectedDestinationLimit ?? 1;
-
     await showDialog<void>(
       context: context,
       barrierDismissible: true,
@@ -180,34 +164,24 @@ class _ParcelOngoingPageState extends State<ParcelOngoingPage> {
           builder: (context, setDialogState) {
             return Dialog(
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
-              ),
+                  borderRadius: BorderRadius.circular(18)),
               child: Padding(
                 padding: const EdgeInsets.all(18),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Start Delivery',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    const Text('Start Delivery',
+                        style: TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
-                    const Text(
-                      'Choose Number of destination',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    const Text('Choose Number of destination',
+                        style: TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 6),
                     const Text(
-                      'Note: This is based from the nearest destination from current location',
-                      style: TextStyle(fontSize: 12, color: Colors.black87),
-                    ),
+                        'Note: This is based from the nearest destination from current location',
+                        style: TextStyle(fontSize: 12, color: Colors.black87)),
                     const SizedBox(height: 12),
                     RadioListTile<int>(
                       value: 1,
@@ -259,17 +233,14 @@ class _ParcelOngoingPageState extends State<ParcelOngoingPage> {
                       children: [
                         TextButton(
                           onPressed: () => Navigator.pop(context),
-                          child: const Text(
-                            'Cancel',
-                            style: TextStyle(color: Colors.black87),
-                          ),
+                          child: const Text('Cancel',
+                              style: TextStyle(color: Colors.black87)),
                         ),
                         const SizedBox(width: 8),
                         ElevatedButton(
                           onPressed: () {
-                            setState(() {
-                              _selectedDestinationLimit = tempSelection;
-                            });
+                            setState(() =>
+                                _selectedDestinationLimit = tempSelection);
                             Navigator.pop(context);
                             _startDeliveryFromSelection(tempSelection);
                           },
@@ -277,8 +248,7 @@ class _ParcelOngoingPageState extends State<ParcelOngoingPage> {
                             backgroundColor: const Color(0xFFD40000),
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
+                                borderRadius: BorderRadius.circular(10)),
                           ),
                           child: const Text('Confirm'),
                         ),
@@ -296,44 +266,38 @@ class _ParcelOngoingPageState extends State<ParcelOngoingPage> {
 
   void _startDeliveryFromSelection(int selectedLimit) {
     if (_routeCandidates.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No parcel destinations with coordinates found'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('No parcel destinations with coordinates found'),
+        backgroundColor: Colors.red,
+      ));
       return;
     }
-
     final from = _currentLocation ?? _mapCenter;
     const distance = Distance();
     final sorted = List<Map<String, dynamic>>.from(_routeCandidates)
       ..sort((a, b) {
         final aPoint = LatLng(a['lat'] as double, a['lng'] as double);
         final bPoint = LatLng(b['lat'] as double, b['lng'] as double);
-        final aMeters = distance.as(LengthUnit.Meter, from, aPoint);
-        final bMeters = distance.as(LengthUnit.Meter, from, bPoint);
-        return aMeters.compareTo(bMeters);
+        return distance
+            .as(LengthUnit.Meter, from, aPoint)
+            .compareTo(distance.as(LengthUnit.Meter, from, bPoint));
       });
-
     final count = selectedLimit == 0
         ? sorted.length
         : math.min(selectedLimit, sorted.length);
     if (count <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No available destinations for routing'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('No available destinations for routing'),
+        backgroundColor: Colors.red,
+      ));
       return;
     }
-    final selected = sorted.take(count).toList();
-
-    final parcelDestinations = selected.map((entry) {
+    final parcelDestinations = sorted.take(count).map((entry) {
       final parcelId = entry['parcel_id'].toString();
       final address = (entry['address'] ?? '').toString().trim();
-      final label = address.isEmpty ? 'Parcel #$parcelId' : 'Parcel #$parcelId - $address';
+      final label = address.isEmpty
+          ? 'Parcel #$parcelId'
+          : 'Parcel #$parcelId - $address';
       return <String, dynamic>{
         'name': label,
         'parcel_id': entry['parcel_id'],
@@ -359,22 +323,16 @@ class _ParcelOngoingPageState extends State<ParcelOngoingPage> {
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) return;
-
       var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
       }
       if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        return;
-      }
-
+          permission == LocationPermission.deniedForever) return;
       final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
+          desiredAccuracy: LocationAccuracy.high);
       final nextCenter = LatLng(position.latitude, position.longitude);
       if (!mounted) return;
-
       setState(() {
         _mapCenter = nextCenter;
         _currentLocation = nextCenter;
@@ -404,7 +362,6 @@ class _ParcelOngoingPageState extends State<ParcelOngoingPage> {
         ),
         child: Stack(
           children: [
-            // 🔴 Top header
             Positioned(
               top: 0,
               left: 0,
@@ -453,8 +410,6 @@ class _ParcelOngoingPageState extends State<ParcelOngoingPage> {
                 ),
               ),
             ),
-
-            // 📦 Page content
             Padding(
               padding: const EdgeInsets.only(top: 100.0),
               child: ListView(
@@ -462,7 +417,7 @@ class _ParcelOngoingPageState extends State<ParcelOngoingPage> {
                 children: [
                   _attemptSummaryCard(),
                   const SizedBox(height: 20),
-                  _NavigationOnGoingParcelCard(), // 🗺️ Map Card
+                  _NavigationOnGoingParcelCard(),
                   const SizedBox(height: 20),
                   _ongoingListCard(),
                 ],
@@ -474,7 +429,6 @@ class _ParcelOngoingPageState extends State<ParcelOngoingPage> {
     );
   }
 
-  /// ✅ Summary Card
   Widget _attemptSummaryCard() {
     return Container(
       padding: const EdgeInsets.all(12),
@@ -483,51 +437,43 @@ class _ParcelOngoingPageState extends State<ParcelOngoingPage> {
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+              offset: const Offset(0, 5))
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          const Text(
-            "Delivery Attempt",
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
-          ),
+          const Text("Delivery Attempt",
+              style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87)),
           const SizedBox(height: 10),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              Column(
-                children: [
-                  const Text("Attempt 1 Pending",
-                      style:
-                          TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
-                  Text(attempt1Pending.toString(),
-                      style: const TextStyle(
-                          fontSize: 25,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.orange)),
-                ],
-              ),
-              Column(
-                children: [
-                  const Text("Attempt 2 Pending",
-                      style:
-                          TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
-                  Text(attempt2Pending.toString(),
-                      style: const TextStyle(
-                          fontSize: 25,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.orange)),
-                ],
-              ),
+              Column(children: [
+                const Text("Attempt 1 Pending",
+                    style:
+                        TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                Text(attempt1Pending.toString(),
+                    style: const TextStyle(
+                        fontSize: 25,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.orange)),
+              ]),
+              Column(children: [
+                const Text("Attempt 2 Pending",
+                    style:
+                        TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                Text(attempt2Pending.toString(),
+                    style: const TextStyle(
+                        fontSize: 25,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.orange)),
+              ]),
             ],
           ),
         ],
@@ -535,7 +481,6 @@ class _ParcelOngoingPageState extends State<ParcelOngoingPage> {
     );
   }
 
-  /// 🗺️ Map Card (same setup as maps1.dart)
   Widget _NavigationOnGoingParcelCard() {
     return Container(
       padding: const EdgeInsets.all(12),
@@ -544,10 +489,9 @@ class _ParcelOngoingPageState extends State<ParcelOngoingPage> {
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+              offset: const Offset(0, 5))
         ],
       ),
       child: Column(
@@ -556,10 +500,9 @@ class _ParcelOngoingPageState extends State<ParcelOngoingPage> {
           Row(
             children: [
               const Expanded(
-                child: Text(
-                  "Ongoing Parcels Maps",
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
+                child: Text("Ongoing Parcels Maps",
+                    style:
+                        TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
               ),
               SizedBox(
                 height: 32,
@@ -571,13 +514,11 @@ class _ParcelOngoingPageState extends State<ParcelOngoingPage> {
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     elevation: 0,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
+                        borderRadius: BorderRadius.circular(20)),
                   ),
-                  child: const Text(
-                    "Start Delivery",
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                  ),
+                  child: const Text("Start Delivery",
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                 ),
               ),
             ],
@@ -619,11 +560,8 @@ class _ParcelOngoingPageState extends State<ParcelOngoingPage> {
                           point: entry['point'] as LatLng,
                           width: 36,
                           height: 36,
-                          child: const Icon(
-                            Icons.location_on,
-                            color: Colors.red,
-                            size: 32,
-                          ),
+                          child: const Icon(Icons.location_on,
+                              color: Colors.red, size: 32),
                         ),
                       ),
                     ],
@@ -637,9 +575,7 @@ class _ParcelOngoingPageState extends State<ParcelOngoingPage> {
     );
   }
 
-  /// ✅ List of ongoing parcels
-/// ✅ List of ongoing parcels (with search + filter)
-Widget _ongoingListCard() {
+  Widget _ongoingListCard() {
     final totalItems = filteredParcels.length;
     final totalPages =
         totalItems == 0 ? 1 : ((totalItems - 1) ~/ _itemsPerPage) + 1;
@@ -657,21 +593,16 @@ Widget _ongoingListCard() {
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+              offset: const Offset(0, 5))
         ],
       ),
       child: Column(
         children: [
-          const Text(
-            "On-going Parcels",
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
+          const Text("On-going Parcels",
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-
-          // 🔍 Search Bar
           TextField(
             controller: searchController,
             onChanged: (_) => applyFilters(),
@@ -686,10 +617,7 @@ Widget _ongoingListCard() {
               ),
             ),
           ),
-
           const SizedBox(height: 10),
-
-          // ⬇️ Dropdown for filtering attempts
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
@@ -700,8 +628,10 @@ Widget _ongoingListCard() {
                 value: dropdownValue,
                 items: const [
                   DropdownMenuItem(value: "All", child: Text("All")),
-                  DropdownMenuItem(value: "Attempt 1", child: Text("Attempt 1")),
-                  DropdownMenuItem(value: "Attempt 2", child: Text("Attempt 2")),
+                  DropdownMenuItem(
+                      value: "Attempt 1", child: Text("Attempt 1")),
+                  DropdownMenuItem(
+                      value: "Attempt 2", child: Text("Attempt 2")),
                 ],
                 onChanged: (String? newValue) {
                   if (newValue != null) {
@@ -715,9 +645,7 @@ Widget _ongoingListCard() {
               ),
             ],
           ),
-
           const SizedBox(height: 8),
-
           if (isLoadingOngoing)
             const Center(child: CircularProgressIndicator())
           else if (pageItems.isEmpty)
@@ -730,7 +658,8 @@ Widget _ongoingListCard() {
                           final result = await Navigator.push<bool>(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => ParcelOngoingInformationPage(
+                              builder: (context) =>
+                                  ParcelOngoingInformationPage(
                                 parcelId: parcel['parcel_id'],
                                 userId: widget.userId,
                               ),
@@ -761,10 +690,8 @@ Widget _ongoingListCard() {
                       : null,
                   child: const Text("Previous"),
                 ),
-                Text(
-                  "Page ${safePage + 1} of $totalPages",
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
+                Text("Page ${safePage + 1} of $totalPages",
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
                 TextButton(
                   onPressed: safePage < totalPages - 1
                       ? () => setState(() => _currentPage = safePage + 1)
@@ -801,13 +728,11 @@ Widget _ongoingListCard() {
               ),
             ],
           ),
-          Text(
-            attempt,
-            style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: Colors.orange),
-          ),
+          Text(attempt,
+              style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.orange)),
         ],
       ),
     );

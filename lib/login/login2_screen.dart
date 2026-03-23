@@ -179,8 +179,12 @@ class _Login2ScreenState extends State<Login2Screen> {
   @override
   void dispose() {
     _timer?.cancel();
-    for (var c in _codeControllers) c.dispose();
-    for (var f in _focusNodes) f.dispose();
+    for (var c in _codeControllers) {
+      c.dispose();
+    }
+    for (var f in _focusNodes) {
+      f.dispose();
+    }
     super.dispose();
   }
 

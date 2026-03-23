@@ -1,5 +1,6 @@
 /// API Configuration for AVOID Maps Module
 /// Contains all API endpoints and keys for external services
+library;
 
 class ApiConfig {
   // OpenStreetMap (OSM) - No API key required

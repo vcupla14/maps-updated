@@ -39,7 +39,6 @@ class _ParcelsPageState extends State<ParcelsPage> {
   bool isLoadingUser = true;
   String riderFirstName = 'Rider';
 
-  // ✅ Today summary counts
   int deliveredToday = 0;
   int ongoingToday = 0;
   int cancelledToday = 0;
@@ -70,28 +69,12 @@ class _ParcelsPageState extends State<ParcelsPage> {
             begin: Offset(slideLeft ? -0.15 : 0.15, 0),
             end: Offset.zero,
           ).animate(
-            CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeOutCubic,
-            ),
-          );
-
-          final fadeAnimation = Tween<double>(
-            begin: 0.0,
-            end: 1.0,
-          ).animate(
-            CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeIn,
-            ),
-          );
-
+              CurvedAnimation(parent: animation, curve: Curves.easeOutCubic));
+          final fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+              CurvedAnimation(parent: animation, curve: Curves.easeIn));
           return SlideTransition(
             position: slideAnimation,
-            child: FadeTransition(
-              opacity: fadeAnimation,
-              child: child,
-            ),
+            child: FadeTransition(opacity: fadeAnimation, child: child),
           );
         },
       ),
@@ -100,55 +83,50 @@ class _ParcelsPageState extends State<ParcelsPage> {
 
   void _onItemTapped(int index) {
     if (index == _selectedIndex) return;
-
     switch (index) {
       case 0:
         _navigateWithTransition(
-          HomePageScreen(
-            userId: widget.userId,
-            liveLat: widget.liveLat,
-            liveLng: widget.liveLng,
-          ),
-          index,
-        );
+            HomePageScreen(
+                userId: widget.userId,
+                liveLat: widget.liveLat,
+                liveLng: widget.liveLng),
+            index);
         break;
       case 1:
         _navigateWithTransition(
-          MapScreen(
-            userId: widget.userId,
-            liveLat: widget.liveLat,
-            liveLng: widget.liveLng,
-          ),
-          index,
-        );
+            MapScreen(
+                userId: widget.userId,
+                liveLat: widget.liveLat,
+                liveLng: widget.liveLng),
+            index);
         break;
       case 2:
         _navigateWithTransition(
-          RulesAndViolationScreen(
-            userId: widget.userId,
-            liveLat: widget.liveLat,
-            liveLng: widget.liveLng,
-          ),
-          index,
-        );
+            RulesAndViolationScreen(
+                userId: widget.userId,
+                liveLat: widget.liveLat,
+                liveLng: widget.liveLng),
+            index);
         break;
       case 4:
         _navigateWithTransition(
-          ProfileScreen(
-            userId: widget.userId,
-            liveLat: widget.liveLat,
-            liveLng: widget.liveLng,
-          ),
-          index,
-        );
+            ProfileScreen(
+                userId: widget.userId,
+                liveLat: widget.liveLat,
+                liveLng: widget.liveLng),
+            index);
         break;
     }
   }
 
-  // ✅ Fetch today’s parcel summary
+  // ✅ FIX: Query only this rider's parcels directly
   Future<void> fetchTodaySummary() async {
     try {
-      final response = await supabase.from('parcels').select('*');
+      final response = await supabase
+          .from('parcels')
+          .select('*')
+          .eq('assigned_rider_id', widget.userId);
+
       final List data = response as List;
 
       int delivered = 0;
@@ -157,13 +135,11 @@ class _ParcelsPageState extends State<ParcelsPage> {
       int quota = 0;
 
       for (var item in data) {
-        if (!_isAssignedToCurrentRider(item)) continue;
         final status = (item['status'] ?? '').toString().toLowerCase();
         final attempt1Status =
             (item['attempt1_status'] ?? '').toString().toLowerCase();
         final attempt2Status =
             (item['attempt2_status'] ?? '').toString().toLowerCase();
-
         final attempt1Date = (item['attempt1_date'] ?? '').toString();
         final attempt2Date = (item['attempt2_date'] ?? '').toString();
 
@@ -171,7 +147,6 @@ class _ParcelsPageState extends State<ParcelsPage> {
             attempt1Status == 'success' && isSameDay(attempt1Date);
         final deliveredTodayByAttempt2 =
             attempt2Status == 'success' && isSameDay(attempt2Date);
-
         final cancelledTodayByAttempt1 =
             attempt1Status == 'failed' && isSameDay(attempt1Date);
         final cancelledTodayByAttempt2 =
@@ -230,10 +205,8 @@ class _ParcelsPageState extends State<ParcelsPage> {
   }
 
   String _timeGreeting() {
-    final now = DateTime.now();
-    final hour = now.hour;
-    final minute = now.minute;
-
+    final hour = DateTime.now().hour;
+    final minute = DateTime.now().minute;
     if ((hour >= 5 && hour < 12) || (hour == 12 && minute == 0)) {
       return 'Good Morning';
     }
@@ -247,29 +220,13 @@ class _ParcelsPageState extends State<ParcelsPage> {
     if (rawDate.isEmpty) return false;
     final parsed = DateTime.tryParse(rawDate);
     if (parsed == null) return false;
-
     final now = DateTime.now();
     return parsed.year == now.year &&
         parsed.month == now.month &&
         parsed.day == now.day;
   }
 
-  bool _isAssignedToCurrentRider(Map<String, dynamic> item) {
-    final riderId = widget.userId.trim();
-    final candidates = [
-      item['user_id'],
-      item['assigned_rider'],
-      item['assigned_rider_id'],
-    ];
-    for (final candidate in candidates) {
-      if (candidate != null && candidate.toString().trim() == riderId) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  // ✅ Fetch delivery history (only delivered & cancelled)
+  // ✅ FIX: Query only this rider's history directly
   Future<void> fetchHistoryParcels() async {
     try {
       final response = await supabase
@@ -280,7 +237,6 @@ class _ParcelsPageState extends State<ParcelsPage> {
       final List data = response as List;
 
       List<Map<String, dynamic>> history = [];
-
       for (var item in data) {
         String timestamp = "";
         if (item['attempt2_date'] != null) {
@@ -288,11 +244,11 @@ class _ParcelsPageState extends State<ParcelsPage> {
         } else if (item['attempt1_date'] != null) {
           timestamp = item['attempt1_date'].toString();
         }
-
         history.add({
           "parcel_id": item['parcel_id'],
-          "status":
-              item['status'] == "successfully delivered" ? "Delivered" : "Cancelled",
+          "status": item['status'] == "successfully delivered"
+              ? "Delivered"
+              : "Cancelled",
           "timestamp": timestamp,
         });
       }
@@ -316,16 +272,18 @@ class _ParcelsPageState extends State<ParcelsPage> {
     }
   }
 
-  // ✅ Fetch ongoing parcels (attempt pending)
+  // ✅ FIX: Query only this rider's ongoing parcels directly
   Future<void> fetchOngoingParcels() async {
     try {
-      final response = await supabase.from('parcels').select('*');
+      final response = await supabase
+          .from('parcels')
+          .select('*')
+          .eq('assigned_rider_id', widget.userId)
+          .eq('status', 'on-going');
       final List data = response as List;
 
       List<Map<String, dynamic>> ongoing = [];
-
       for (var item in data) {
-        if (!_isAssignedToCurrentRider(item)) continue;
         String attempt1Status = item['attempt1_status'] ?? '';
         String attempt2Status = item['attempt2_status'] ?? '';
 
@@ -372,7 +330,6 @@ class _ParcelsPageState extends State<ParcelsPage> {
         ),
         child: Stack(
           children: [
-            // Header
             Positioned(
               top: 0,
               left: 0,
@@ -417,8 +374,6 @@ class _ParcelsPageState extends State<ParcelsPage> {
                 ),
               ),
             ),
-
-            // Page content
             Padding(
               padding: const EdgeInsets.only(top: 100.0),
               child: ListView(
@@ -475,7 +430,6 @@ class _ParcelsPageState extends State<ParcelsPage> {
     );
   }
 
-  // ✅ Today summary card (DB)
   Widget _todayParcelCard() {
     final greetingName = isLoadingUser ? '...' : riderFirstName;
     final dateLabel = DateFormat('EEEE, MMMM d').format(DateTime.now());
@@ -498,10 +452,9 @@ class _ParcelsPageState extends State<ParcelsPage> {
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+              offset: const Offset(0, 5))
         ],
       ),
       child: isLoadingToday
@@ -509,35 +462,26 @@ class _ParcelsPageState extends State<ParcelsPage> {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Text(
-                  '${_timeGreeting()}, $greetingName',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
+                Text('${_timeGreeting()}, $greetingName',
+                    style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87),
+                    textAlign: TextAlign.center),
                 const SizedBox(height: 2),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text(
-                      "Today ",
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    Text(
-                      dateLabel,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.black54,
-                      ),
-                    ),
+                    const Text("Today ",
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.black87)),
+                    Text(dateLabel,
+                        style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.black54)),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -572,7 +516,8 @@ class _ParcelsPageState extends State<ParcelsPage> {
                   children: [
                     _statusLegendItem(color: Colors.green, label: "Delivered"),
                     _statusLegendItem(color: Colors.orange, label: "On-going"),
-                    _statusLegendItem(color: Colors.red, label: "Not Delivered"),
+                    _statusLegendItem(
+                        color: Colors.red, label: "Not Delivered"),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -582,16 +527,13 @@ class _ParcelsPageState extends State<ParcelsPage> {
     );
   }
 
-  // ✅ Parcel Delivery History (DB, 3 items only)
   Widget _statusLegendItem({required Color color, required String label}) {
     return Row(
       children: [
         Icon(Icons.circle, size: 8, color: color),
         const SizedBox(width: 6),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-        ),
+        Text(label,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
       ],
     );
   }
@@ -619,11 +561,10 @@ class _ParcelsPageState extends State<ParcelsPage> {
             child: Text(
               "Quota\n${dailyQuota.toString().padLeft(2, '0')}/70",
               style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Colors.green,
-                height: 1.1,
-              ),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.green,
+                  height: 1.1),
               textAlign: TextAlign.center,
             ),
           ),
@@ -640,10 +581,9 @@ class _ParcelsPageState extends State<ParcelsPage> {
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+              offset: const Offset(0, 5))
         ],
       ),
       child: Column(
@@ -725,7 +665,6 @@ class _ParcelsPageState extends State<ParcelsPage> {
     );
   }
 
-  // ✅ On-going Parcels (DB, 3 items only)
   Widget _onGoingParcelCard() {
     return Container(
       padding: const EdgeInsets.all(12),
@@ -734,10 +673,9 @@ class _ParcelsPageState extends State<ParcelsPage> {
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+              offset: const Offset(0, 5))
         ],
       ),
       child: Column(
