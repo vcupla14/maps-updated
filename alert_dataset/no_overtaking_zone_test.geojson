@@ -1,0 +1,61 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "zone_type": "no_overtaking_zone",
+        "name": "Rizal No Overtaking Segment A"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.0612225364095,
+          14.641222627643081
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "zone_type": "no_overtaking_zone",
+        "name": "Rizal No Overtaking Segment B"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.06054695563654,
+          14.641162572299844
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "zone_type": "no_overtaking_zone",
+        "name": "Rizal No Overtaking Segment C"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.06073063888827,
+          14.63905422398169
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "zone_type": "no_overtaking_zone",
+        "name": "Rizal No Overtaking Segment D"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.06137508690675,
+          14.639084534338604
+        ]
+      }
+    }
+  ]
+}

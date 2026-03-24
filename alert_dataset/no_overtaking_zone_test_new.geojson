@@ -1,0 +1,20 @@
+{
+  "type": "FeatureCollection",
+  "name": "no_overtaking_zone_test",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Rizal No Overtaking Segment C",
+        "zone_type": "no_overtaking_zone"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          121.11553809179911,
+          14.624856292028005
+        ]
+      }
+    }
+  ]
+}
